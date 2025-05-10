@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, type ChangeEvent, useRef } from "react";
@@ -32,7 +33,6 @@ export default function LinkAnalysisPage() {
     const file = event.target.files?.[0];
     if (file) {
       const allowedExtensions = [".csv", ".txt", ".pdf", ".xls", ".xlsx", ".anb", ".anx"];
-      // Basic check on client, backend will do more robust handling
       const fileExtensionSupported = allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext)) || file.type === "application/pdf" || file.type === "text/csv" || file.type === "text/plain";
 
       if (fileExtensionSupported) {
@@ -52,6 +52,9 @@ export default function LinkAnalysisPage() {
 
   const parseEntitiesFromText = (text: string): string[] => {
     const entities = new Set<string>();
+    if (!text || text.trim() === "" || text.startsWith("AVISO DO SISTEMA:")) {
+      return [];
+    }
     const lines = text.split(/\r?\n/);
 
     const phonePattern = /^(?:\+55\s?)?(?:\(?\d{2}\)?\s?)?\d{4,5}-?\d{4}$/;
@@ -60,7 +63,6 @@ export default function LinkAnalysisPage() {
     const emailPattern = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
     const plateOldPattern = /^[A-Z]{3}-?\d{4}$/i;
     const plateMercosulPattern = /^[A-Z]{3}\d[A-Z]\d{2}$/i;
-
 
     lines.forEach(line => {
       const trimmedLine = line.trim();
@@ -123,25 +125,25 @@ export default function LinkAnalysisPage() {
     setProcessingMessage("Iniciando análise...");
     setRelationships(null);
 
-    let entities: string[] = [];
     let extractedTextForParsing = "";
+    let actualTextExtracted = false;
 
     try {
-      // For CSV and TXT, read text directly
       if (selectedFile.type === "text/csv" || selectedFile.type === "text/plain" || selectedFile.name.toLowerCase().endsWith(".txt") || selectedFile.name.toLowerCase().endsWith(".csv")) {
         setProgress(20);
         setProcessingMessage(`Lendo arquivo de texto: ${selectedFile.name}...`);
         try {
             extractedTextForParsing = await selectedFile.text();
+            actualTextExtracted = true;
+            toast({ title: "Leitura de Texto Concluída", description: `Conteúdo de ${selectedFile.name} lido.` });
         } catch (textReadError) {
             console.error("Erro ao ler arquivo de texto:", textReadError);
-            toast({ variant: "destructive", title: "Erro ao Ler Arquivo de Texto", description: `Não foi possível ler o conteúdo do arquivo ${selectedFile.name}.` });
+            toast({ variant: "destructive", title: "Erro ao Ler Arquivo de Texto", description: `Não foi possível ler o conteúdo do arquivo ${selectedFile.name}. Análise de vínculos não pode prosseguir.` });
             setIsLoading(false); 
             setProgress(0);
             return; 
         }
       } else { 
-        // For PDF, XLS, XLSX, ANB, ANX, etc., use fileDataUri and let analyzeDocument flow handle it
         setProgress(10);
         setProcessingMessage(`Preparando arquivo ${selectedFile.name} para extração de texto...`);
         
@@ -152,7 +154,7 @@ export default function LinkAnalysisPage() {
             reader.onloadend = async (e) => {
                 const fileDataUri = e.target?.result as string;
                 if (!fileDataUri) {
-                    toast({ variant: "destructive", title: "Erro ao Ler Arquivo", description: "Não foi possível ler o conteúdo do arquivo."});
+                    toast({ variant: "destructive", title: "Erro ao Ler Arquivo", description: "Não foi possível ler o conteúdo do arquivo. Análise de vínculos não pode prosseguir."});
                     reject(new Error("Erro ao ler arquivo: URI de dados vazia."));
                     return;
                 }
@@ -163,58 +165,56 @@ export default function LinkAnalysisPage() {
                     const docResult = await analyzeDocument(docInput); 
                     
                     if (docResult.extractedText && docResult.extractedText.length > 0) {
-                        // If extractedText is a system warning, it means content wasn't really extracted for entity parsing.
-                        // However, parseEntitiesFromText will just get the warning itself, which is fine.
-                        // The AI for relationships will then see this warning as an "entity".
-                        extractedTextForParsing = docResult.extractedText;
-                         if (!docResult.extractedText.startsWith("AVISO DO SISTEMA:")) {
-                           toast({ title: "Extração de Texto", description: `Texto extraído de ${selectedFile.name} para análise de entidades.` });
-                         } else {
-                           toast({ variant: "default", title: "Extração de Texto Limitada", description: `Conteúdo de ${selectedFile.name} não pôde ser lido diretamente. Análise de vínculos será baseada em metadados.` });
-                         }
+                        if (docResult.extractedText.startsWith("AVISO DO SISTEMA:")) {
+                           toast({ variant: "default", title: "Extração de Texto Limitada", description: `Conteúdo de ${selectedFile.name} não pôde ser lido diretamente pela IA. A análise de vínculos não será realizada para este arquivo.` });
+                           actualTextExtracted = false; 
+                        } else {
+                           extractedTextForParsing = docResult.extractedText;
+                           actualTextExtracted = true;
+                           toast({ title: "Extração de Texto Concluída", description: `Texto extraído de ${selectedFile.name} para análise de entidades.` });
+                        }
                     } else {
-                        toast({ variant: "default", title: "Extração de Texto", description: `Não foi possível extrair texto de ${selectedFile.name} ou o arquivo não contém texto.` });
+                        toast({ variant: "default", title: "Extração de Texto Falhou", description: `Não foi possível extrair texto de ${selectedFile.name} ou o arquivo está vazio. Análise de vínculos não pode prosseguir.` });
+                        actualTextExtracted = false;
                     }
                     resolve();
                 } catch (extractionError) {
                     console.error("Erro na extração de texto:", extractionError);
-                    toast({ variant: "destructive", title: "Erro na Extração de Texto", description: extractionError instanceof Error ? extractionError.message : "Falha ao extrair texto do arquivo com IA." });
+                    toast({ variant: "destructive", title: "Erro na Extração de Texto", description: (extractionError instanceof Error ? extractionError.message : "Falha ao extrair texto do arquivo com IA.") + " Análise de vínculos não pode prosseguir."});
                     reject(extractionError);
                 }
             };
             reader.onerror = (errorEvent) => { 
-                 toast({ variant: "destructive", title: "Erro ao Ler Arquivo", description: "Ocorreu um erro ao tentar ler o arquivo."});
+                 toast({ variant: "destructive", title: "Erro ao Ler Arquivo", description: "Ocorreu um erro ao tentar ler o arquivo. Análise de vínculos não pode prosseguir."});
                  reject(new Error(`Erro no leitor de arquivo ao processar ${selectedFile.name}. Detalhes: ${errorEvent.type}`));
             }
         });
       }
 
-      // Common entity parsing and relationship finding logic
-      if (extractedTextForParsing) {
-        setProgress(50);
-        setProcessingMessage("Extraindo entidades do texto processado...");
-        entities = parseEntitiesFromText(extractedTextForParsing);
+      if (!actualTextExtracted || !extractedTextForParsing) {
+        // Toasts for specific failures already shown above.
+        // This is a fallback or if previous logic didn't set isLoading to false.
+        if(actualTextExtracted && !extractedTextForParsing){ // If actualTextExtracted was true, but extractedText is empty
+             toast({ variant: "default", title: "Texto Extraído Vazio", description: "O texto extraído do arquivo está vazio. Análise de vínculos não pode prosseguir." });
+        }
+        setIsLoading(false);
+        setProgress(0);
+        return;
       }
+
+      setProgress(50);
+      setProcessingMessage("Extraindo entidades do texto processado...");
+      const entities = parseEntitiesFromText(extractedTextForParsing);
       
       if (entities.length === 0) {
-        // This can happen if text extraction yielded nothing, or parsing yielded nothing.
-        // The toast about extraction failure would have already been shown.
-        // If it was a system warning, entities array might contain that warning text.
-        if (!extractedTextForParsing.startsWith("AVISO DO SISTEMA:")) { // Avoid double toasting for system warnings.
-          toast({ variant: "default", title: "Nenhuma Entidade Encontrada", description: "O arquivo não contém entidades que puderam ser extraídas automaticamente ou o texto extraído estava vazio." });
-        }
-        // If entities is truly empty (not even a system warning), and we are here, it means no data to process.
-        if(entities.length === 0) {
-            setIsLoading(false);
-            setProgress(0);
-            return;
-        }
+        toast({ variant: "default", title: "Nenhuma Entidade Válida Encontrada", description: "Não foi possível extrair entidades válidas do texto do arquivo para análise de vínculos." });
+        setIsLoading(false);
+        setProgress(0);
+        return;
       }
       
-      // Even if entities contains just a system warning, send it to the relationship finder.
-      // The AI might still be able to provide some context based on the file name/type mentioned in the warning.
       setProgress(70);
-      setProcessingMessage(`Analisando ${entities.length} strings/entidades com IA (Contexto: ${analysisContext})...`);
+      setProcessingMessage(`Analisando ${entities.length} entidades com IA (Contexto: ${analysisContext})...`);
       const input: FindEntityRelationshipsInput = { entities, analysisContext };
       const result = await findEntityRelationships(input);
       setRelationships(result.relationships);
@@ -223,15 +223,15 @@ export default function LinkAnalysisPage() {
       if (result.relationships && result.relationships.length > 0) {
         toast({ title: "Análise de Vínculos Concluída", description: `Foram encontrados ${result.relationships.length} vínculos potenciais.` });
       } else {
-        toast({ title: "Análise de Vínculos Concluída", description: "Nenhum vínculo direto foi encontrado para as entidades/strings fornecidas." });
+        toast({ title: "Análise de Vínculos Concluída", description: "Nenhum vínculo direto foi encontrado para as entidades fornecidas." });
       }
 
     } catch (error) { 
       console.error("Erro na análise de vínculos:", error);
-      // Avoid generic toast if a more specific one was already shown (e.g., during file read/extraction)
+      // Avoid generic toast if a more specific one was already shown
       const errorMessagesToIgnore = ["Erro ao ler arquivo:", "Falha ao extrair texto", "URI de dados vazia"];
       if (!(error instanceof Error && errorMessagesToIgnore.some(msg => error.message.includes(msg)))) {
-        toast({ variant: "destructive", title: "Falha Geral na Análise", description: error instanceof Error ? error.message : "Ocorreu um erro desconhecido." });
+        toast({ variant: "destructive", title: "Falha Geral na Análise", description: (error instanceof Error ? error.message : "Ocorreu um erro desconhecido.") + " Análise de vínculos interrompida." });
       }
     } finally {
       setIsLoading(false); 
@@ -331,7 +331,7 @@ export default function LinkAnalysisPage() {
         <AlertDescription>
           <ul className="list-disc list-inside text-xs">
             <li>Para arquivos <strong>CSV/TXT</strong>: certifique-se que as entidades estão separadas por linha, vírgula, ponto e vírgula ou tabulação.</li>
-            <li>Arquivos <strong>PDF, XLS, XLSX, ANB, ANX</strong>: o texto será extraído automaticamente pela IA para identificar entidades. A qualidade da extração pode variar.</li>
+            <li>Arquivos <strong>PDF, XLS, XLSX, ANB, ANX</strong>: o texto será extraído automaticamente pela IA para identificar entidades. A qualidade da extração pode variar; arquivos não textuais ou muito complexos podem resultar em extração limitada.</li>
             <li>Selecionar um <strong>Contexto da Análise</strong> pode ajudar a IA a identificar tipos de entidades e relações mais relevantes.</li>
           </ul>
         </AlertDescription>
@@ -385,7 +385,7 @@ export default function LinkAnalysisPage() {
         </Card>
       )}
       
-      {relationships && relationships.length === 0 && !isLoading && (
+      {relationships && relationships.length === 0 && !isLoading && selectedFile && (
          <Card className="mt-6">
             <CardContent className="p-6 flex flex-col items-center justify-center min-h-[200px]">
                 <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
@@ -397,3 +397,4 @@ export default function LinkAnalysisPage() {
     </div>
   );
 }
+

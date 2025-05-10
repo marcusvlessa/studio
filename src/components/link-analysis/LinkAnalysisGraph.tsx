@@ -58,6 +58,14 @@ const nodeTypes = {
   custom: CustomNodeComponent,
 };
 
+interface LinkAnalysisGraphProps {
+    relationshipsData: FindEntityRelationshipsOutput['relationships'];
+}
+
+interface EdgeData {
+  relationship: string;
+  strength?: number;
+}
 
 export function LinkAnalysisGraph({ relationshipsData }: LinkAnalysisGraphProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<CustomNodeData>([]);
@@ -167,10 +175,3 @@ export function LinkAnalysisGraph({ relationshipsData }: LinkAnalysisGraphProps)
     </Card>
   );
 }
-
-interface EdgeData {
-  relationship: string;
-  strength?: number;
-}
-
-```

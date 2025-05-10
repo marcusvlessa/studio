@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, type ChangeEvent, useRef } from "react";
@@ -22,7 +23,6 @@ export default function DocumentAnalysisPage() {
   const [progress, setProgress] = useState(0);
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isTextFile, setIsTextFile] = useState(false);
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -43,7 +43,6 @@ export default function DocumentAnalysisPage() {
         setSelectedFile(file);
         setAnalysisResult(null);
         setProgress(0);
-        setIsTextFile(isAllowedText); // Set if it's a text file
 
         if (isAllowedImage) {
           const reader = new FileReader();
@@ -52,14 +51,13 @@ export default function DocumentAnalysisPage() {
           };
           reader.readAsDataURL(file);
         } else {
-          setFilePreview(null); // No preview for non-images or text files
+          setFilePreview(null); 
         }
         toast({ title: "Arquivo Selecionado", description: file.name });
       } else {
         toast({ variant: "destructive", title: "Tipo de Arquivo Inválido", description: "Por favor, envie um arquivo PDF, Word, TXT ou imagem (PNG, JPG, GIF, WEBP)." });
         setSelectedFile(null);
         setFilePreview(null);
-        setIsTextFile(false);
         if (fileInputRef.current) {
             fileInputRef.current.value = "";
         }
@@ -85,15 +83,19 @@ export default function DocumentAnalysisPage() {
       }
     }, 200);
 
+    const fileName = selectedFile.name;
+    const fileType = selectedFile.type;
+    const supportedMediaTypes = ["image/png", "image/jpeg", "image/webp", "image/gif", "application/pdf"];
+
+
     try {
-      const reader = new FileReader();
-      
-      if (isTextFile) {
+      if (fileType === "text/plain" || fileName.toLowerCase().endsWith(".txt")) {
+        const reader = new FileReader();
         reader.readAsText(selectedFile);
         reader.onloadend = async (e) => {
           clearInterval(progressInterval);
           const textContent = e.target?.result as string;
-          if (typeof textContent !== 'string') { // Check if textContent is actually a string
+          if (typeof textContent !== 'string') {
             toast({ variant: "destructive", title: "Erro ao Ler Arquivo de Texto", description: "Não foi possível ler o conteúdo do arquivo de texto."});
             setIsLoading(false);
             setProgress(0);
@@ -104,7 +106,6 @@ export default function DocumentAnalysisPage() {
               textContent,
               fileName: selectedFile.name
           };
-          // AI Call for text content
           try {
             const result = await analyzeDocument(input);
             setAnalysisResult(result);
@@ -118,7 +119,14 @@ export default function DocumentAnalysisPage() {
             setIsLoading(false);
           }
         };
-      } else { // For PDF, images, DOC/DOCX - use fileDataUri
+        reader.onerror = () => {
+            clearInterval(progressInterval);
+            setIsLoading(false);
+            setProgress(0);
+            toast({ variant: "destructive", title: "Erro ao Ler Arquivo", description: "Ocorreu um erro ao tentar ler o arquivo de texto."});
+        };
+      } else if (supportedMediaTypes.includes(fileType)) {
+        const reader = new FileReader();
         reader.readAsDataURL(selectedFile);
         reader.onloadend = async (e) => {
           clearInterval(progressInterval);
@@ -134,7 +142,6 @@ export default function DocumentAnalysisPage() {
               fileDataUri,
               fileName: selectedFile.name
           };
-          // AI Call for fileDataUri
            try {
             const result = await analyzeDocument(input);
             setAnalysisResult(result);
@@ -148,16 +155,46 @@ export default function DocumentAnalysisPage() {
             setIsLoading(false);
           }
         };
-      }
-
-      reader.onerror = () => {
+        reader.onerror = () => {
+            clearInterval(progressInterval);
+            setIsLoading(false);
+            setProgress(0);
+            toast({ variant: "destructive", title: "Erro ao Ler Arquivo", description: "Ocorreu um erro ao tentar ler o arquivo de mídia."});
+        };
+      } else { // Unsupported for direct media processing (e.g., DOC, DOCX)
         clearInterval(progressInterval);
-        setIsLoading(false);
-        setProgress(0);
-        toast({ variant: "destructive", title: "Erro ao Ler Arquivo", description: "Ocorreu um erro ao tentar ler o arquivo."});
-      };
+        
+        const placeholderText = `O arquivo '${fileName}' (tipo: ${fileType || 'desconhecido'}) não é diretamente suportado para extração de conteúdo pela IA. A análise será baseada nesta informação e no nome do arquivo.`;
+        toast({
+          variant: "default",
+          title: "Tipo de Arquivo Não Suportado Diretamente",
+          description: `Arquivos ${fileType ? fileType : `com extensão .${fileName.split('.').pop()}`} não podem ter seu conteúdo extraído automaticamente pela IA. A análise será limitada.`,
+          duration: 8000,
+        });
+        
+        setProgress(50); // Indicate some processing is happening
+        // Ensure isLoading is true for the AI call block, it was set at the beginning of handleAnalyze
+        
+        const input: AnalyzeDocumentInput = {
+            textContent: placeholderText,
+            fileName: fileName,
+        };
 
-    } catch (error) { // Catch errors from FileReader setup or other synchronous issues
+        try {
+            const result = await analyzeDocument(input);
+            setAnalysisResult(result);
+            setProgress(100);
+            toast({ title: "Análise Concluída (com limitações)", description: `Análise para ${fileName} concluída.` });
+        } catch (aiError) {
+            console.error("Erro na análise do documento (placeholder):", aiError);
+            toast({ variant: "destructive", title: "Falha na Análise", description: aiError instanceof Error ? aiError.message : "Ocorreu um erro desconhecido." });
+            setProgress(0);
+        } finally {
+            setIsLoading(false);
+        }
+        return; 
+      }
+    } catch (error) { 
       clearInterval(progressInterval);
       console.error("Erro geral na preparação da análise:", error);
       toast({ variant: "destructive", title: "Falha na Preparação da Análise", description: error instanceof Error ? error.message : "Ocorreu um erro desconhecido." });
@@ -172,7 +209,6 @@ export default function DocumentAnalysisPage() {
     setAnalysisResult(null);
     setIsLoading(false);
     setProgress(0);
-    setIsTextFile(false);
     if (fileInputRef.current) {
         fileInputRef.current.value = "";
     }
@@ -208,11 +244,11 @@ export default function DocumentAnalysisPage() {
                 <FileTextIcon className="h-5 w-5" />
                 <div>
                     <p className="font-semibold">{selectedFile.name}</p>
-                    <p>({ (selectedFile.size / (1024*1024)).toFixed(2) } MB) - Tipo: {selectedFile.type || "Desconhecido"} {isTextFile ? "(Será lido como texto)" : ""}</p>
+                    <p>({ (selectedFile.size / (1024*1024)).toFixed(2) } MB) - Tipo: {selectedFile.type || "Desconhecido"}</p>
                 </div>
             </div>
           )}
-          {filePreview && selectedFile?.type.startsWith("image/") && !isTextFile && (
+          {filePreview && selectedFile?.type.startsWith("image/") && (
             <div>
               <Label>Pré-visualização da Imagem:</Label>
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -383,7 +419,7 @@ export default function DocumentAnalysisPage() {
                         <CardTitle className="flex items-center gap-2"><AlertCircle className="h-6 w-6 text-yellow-500" /> Texto Extraído</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <p className="text-muted-foreground">Nenhum texto foi extraído ou o documento não continha texto legível (ou era um arquivo de texto vazio). Verifique o arquivo ou tente um formato diferente. Arquivos DOC/DOCX podem não ter o texto extraído de forma ideal por esta IA.</p>
+                        <p className="text-muted-foreground">Nenhum texto foi extraído ou o documento não continha texto legível (ou era um arquivo de texto vazio). Verifique o arquivo ou tente um formato diferente.</p>
                     </CardContent>
                 </Card>
             )}

@@ -16,46 +16,50 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 
 export default function DocumentAnalysisPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [filePreview, setFilePreview] = useState<string | null>(null);
+  const [filePreview, setFilePreview] = useState<string | null>(null); // For image previews
   const [analysisResult, setAnalysisResult] = useState<AnalyzeDocumentOutput | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isTextFile, setIsTextFile] = useState(false);
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      const allowedTypes = [
+      const commonImageTypes = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+      const documentTypes = [
         "application/pdf", 
         "application/msword", 
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document", 
-        "text/plain", 
-        "image/png", 
-        "image/jpeg",
-        "image/gif",
-        "image/webp"
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       ];
+      const textType = "text/plain";
 
-      if (allowedTypes.includes(file.type) || file.name.endsWith(".txt")) {
+      const isAllowedImage = commonImageTypes.includes(file.type);
+      const isAllowedDocument = documentTypes.includes(file.type);
+      const isAllowedText = file.type === textType || file.name.toLowerCase().endsWith(".txt");
+      
+      if (isAllowedImage || isAllowedDocument || isAllowedText) {
         setSelectedFile(file);
         setAnalysisResult(null);
         setProgress(0);
+        setIsTextFile(isAllowedText); // Set if it's a text file
 
-        if (file.type.startsWith("image/")) {
+        if (isAllowedImage) {
           const reader = new FileReader();
           reader.onloadend = () => {
             setFilePreview(reader.result as string);
           };
           reader.readAsDataURL(file);
         } else {
-          setFilePreview(null);
+          setFilePreview(null); // No preview for non-images or text files
         }
         toast({ title: "Arquivo Selecionado", description: file.name });
       } else {
         toast({ variant: "destructive", title: "Tipo de Arquivo Inválido", description: "Por favor, envie um arquivo PDF, Word, TXT ou imagem (PNG, JPG, GIF, WEBP)." });
         setSelectedFile(null);
         setFilePreview(null);
+        setIsTextFile(false);
         if (fileInputRef.current) {
             fileInputRef.current.value = "";
         }
@@ -78,50 +82,87 @@ export default function DocumentAnalysisPage() {
       currentProgress += 5;
       if (currentProgress <= 30) { 
         setProgress(currentProgress);
-      } else {
-        // Hold progress at 30% until actual processing starts to give a sense of activity
-        // It will jump to 50% once file reading is done, then to 100% on result.
-        // The main processing time is the AI call.
       }
-    }, 200); // Slower interval for initial progress
+    }, 200);
 
     try {
       const reader = new FileReader();
-      reader.readAsDataURL(selectedFile);
-      reader.onloadend = async (e) => {
-        clearInterval(progressInterval); // Clear previous interval
-        const fileDataUri = e.target?.result as string;
-        if (!fileDataUri) {
-          toast({ variant: "destructive", title: "Erro ao Ler Arquivo", description: "Não foi possível ler o conteúdo do arquivo."});
-          setIsLoading(false);
-          setProgress(0);
-          return;
-        }
-        
-        setProgress(50); // File read, AI call starting
-
-        const input: AnalyzeDocumentInput = { 
-            fileDataUri,
-            fileName: selectedFile.name
+      
+      if (isTextFile) {
+        reader.readAsText(selectedFile);
+        reader.onloadend = async (e) => {
+          clearInterval(progressInterval);
+          const textContent = e.target?.result as string;
+          if (typeof textContent !== 'string') { // Check if textContent is actually a string
+            toast({ variant: "destructive", title: "Erro ao Ler Arquivo de Texto", description: "Não foi possível ler o conteúdo do arquivo de texto."});
+            setIsLoading(false);
+            setProgress(0);
+            return;
+          }
+          setProgress(50);
+          const input: AnalyzeDocumentInput = { 
+              textContent,
+              fileName: selectedFile.name
+          };
+          // AI Call for text content
+          try {
+            const result = await analyzeDocument(input);
+            setAnalysisResult(result);
+            setProgress(100);
+            toast({ title: "Análise Concluída", description: "Documento processado com sucesso." });
+          } catch (aiError) {
+             console.error("Erro na análise do documento (texto):", aiError);
+             toast({ variant: "destructive", title: "Falha na Análise (Texto)", description: aiError instanceof Error ? aiError.message : "Ocorreu um erro desconhecido." });
+             setProgress(0);
+          } finally {
+            setIsLoading(false);
+          }
         };
-        const result = await analyzeDocument(input);
-        setAnalysisResult(result);
-        setProgress(100);
-        toast({ title: "Análise Concluída", description: "Documento processado com sucesso." });
-        setIsLoading(false); // Ensure loading is false on success
-      };
+      } else { // For PDF, images, DOC/DOCX - use fileDataUri
+        reader.readAsDataURL(selectedFile);
+        reader.onloadend = async (e) => {
+          clearInterval(progressInterval);
+          const fileDataUri = e.target?.result as string;
+          if (!fileDataUri) {
+            toast({ variant: "destructive", title: "Erro ao Ler Arquivo", description: "Não foi possível ler o conteúdo do arquivo."});
+            setIsLoading(false);
+            setProgress(0);
+            return;
+          }
+          setProgress(50);
+          const input: AnalyzeDocumentInput = { 
+              fileDataUri,
+              fileName: selectedFile.name
+          };
+          // AI Call for fileDataUri
+           try {
+            const result = await analyzeDocument(input);
+            setAnalysisResult(result);
+            setProgress(100);
+            toast({ title: "Análise Concluída", description: "Documento processado com sucesso." });
+          } catch (aiError) {
+             console.error("Erro na análise do documento (arquivo):", aiError);
+             toast({ variant: "destructive", title: "Falha na Análise (Arquivo)", description: aiError instanceof Error ? aiError.message : "Ocorreu um erro desconhecido." });
+             setProgress(0);
+          } finally {
+            setIsLoading(false);
+          }
+        };
+      }
+
       reader.onerror = () => {
         clearInterval(progressInterval);
-        setIsLoading(false); // Ensure loading is false on error
+        setIsLoading(false);
         setProgress(0);
         toast({ variant: "destructive", title: "Erro ao Ler Arquivo", description: "Ocorreu um erro ao tentar ler o arquivo."});
-      }
-    } catch (error) {
+      };
+
+    } catch (error) { // Catch errors from FileReader setup or other synchronous issues
       clearInterval(progressInterval);
-      console.error("Erro na análise do documento:", error);
-      toast({ variant: "destructive", title: "Falha na Análise", description: error instanceof Error ? error.message : "Ocorreu um erro desconhecido." });
+      console.error("Erro geral na preparação da análise:", error);
+      toast({ variant: "destructive", title: "Falha na Preparação da Análise", description: error instanceof Error ? error.message : "Ocorreu um erro desconhecido." });
       setProgress(0);
-      setIsLoading(false); // Ensure loading is false on catch
+      setIsLoading(false);
     }
   };
 
@@ -131,6 +172,7 @@ export default function DocumentAnalysisPage() {
     setAnalysisResult(null);
     setIsLoading(false);
     setProgress(0);
+    setIsTextFile(false);
     if (fileInputRef.current) {
         fileInputRef.current.value = "";
     }
@@ -156,7 +198,7 @@ export default function DocumentAnalysisPage() {
                 id="document-upload" 
                 type="file" 
                 ref={fileInputRef}
-                accept=".pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,image/png,image/jpeg,image/gif,image/webp" 
+                accept=".pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,.txt,image/png,image/jpeg,image/gif,image/webp" 
                 onChange={handleFileChange} 
                 disabled={isLoading}
             />
@@ -166,11 +208,11 @@ export default function DocumentAnalysisPage() {
                 <FileTextIcon className="h-5 w-5" />
                 <div>
                     <p className="font-semibold">{selectedFile.name}</p>
-                    <p>({ (selectedFile.size / (1024*1024)).toFixed(2) } MB) - Tipo: {selectedFile.type || "Desconhecido"}</p>
+                    <p>({ (selectedFile.size / (1024*1024)).toFixed(2) } MB) - Tipo: {selectedFile.type || "Desconhecido"} {isTextFile ? "(Será lido como texto)" : ""}</p>
                 </div>
             </div>
           )}
-          {filePreview && selectedFile?.type.startsWith("image/") && (
+          {filePreview && selectedFile?.type.startsWith("image/") && !isTextFile && (
             <div>
               <Label>Pré-visualização da Imagem:</Label>
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -335,13 +377,13 @@ export default function DocumentAnalysisPage() {
                 </Card>
             )}
 
-            {!analysisResult.extractedText && !isLoading && selectedFile && ( // Added selectedFile check
+            {!analysisResult.extractedText && !isLoading && selectedFile && (
                 <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2"><AlertCircle className="h-6 w-6 text-yellow-500" /> Texto Extraído</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <p className="text-muted-foreground">Nenhum texto foi extraído ou o documento não continha texto legível. Verifique o arquivo ou tente um formato diferente.</p>
+                        <p className="text-muted-foreground">Nenhum texto foi extraído ou o documento não continha texto legível (ou era um arquivo de texto vazio). Verifique o arquivo ou tente um formato diferente. Arquivos DOC/DOCX podem não ter o texto extraído de forma ideal por esta IA.</p>
                     </CardContent>
                 </Card>
             )}

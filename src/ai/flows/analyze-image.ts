@@ -3,11 +3,11 @@
 'use server';
 
 /**
- * @fileOverview AI flow for analyzing images to extract data and generate descriptions.
+ * @fileOverview Fluxo de IA para analisar imagens, extrair dados, gerar descrições, sugerir melhorias e detectar faces.
  *
- * - analyzeImage - Analyzes an image to extract relevant data and generate a description.
- * - AnalyzeImageInput - The input type for the analyzeImage function.
- * - AnalyzeImageOutput - The return type for the analyzeImage function.
+ * - analyzeImage - Analisa uma imagem para extrair dados relevantes, gerar uma descrição, sugerir melhorias e detectar faces.
+ * - AnalyzeImageInput - O tipo de entrada para a função analyzeImage.
+ * - AnalyzeImageOutput - O tipo de retorno para a função analyzeImage.
  */
 
 import {ai} from '@/ai/genkit';
@@ -17,15 +17,26 @@ const AnalyzeImageInputSchema = z.object({
   photoDataUri: z
     .string()
     .describe(
-      'A photo to analyze, as a data URI that must include a MIME type and use Base64 encoding. Expected format: \'data:<mimetype>;base64,<encoded_data>\'.' // Corrected description
+      "Uma foto para analisar, como uma URI de dados que deve incluir um tipo MIME e usar codificação Base64. Formato esperado: 'data:<mimetype>;base64,<dados_codificados>'."
     ),
 });
 
 export type AnalyzeImageInput = z.infer<typeof AnalyzeImageInputSchema>;
 
+const FacialRecognitionDetailSchema = z.object({
+  boundingBox: z.array(z.number()).optional().describe('Caixa delimitadora da face detectada (ex: [x, y, largura, altura]).'),
+  confidence: z.number().optional().describe('Confiança da detecção da face (0 a 1).'),
+  attributes: z.record(z.string(), z.any()).optional().describe('Atributos gerais da face (ex: óculos, sorriso), se detectados.')
+});
+
 const AnalyzeImageOutputSchema = z.object({
-  description: z.string().describe('A detailed description of the image content.'),
-  possiblePlateRead: z.string().optional().describe('A plausible license plate read if detected.'),
+  description: z.string().describe('Uma descrição detalhada do conteúdo da imagem.'),
+  possiblePlateRead: z.string().optional().describe('Uma leitura plausível de placa de veículo, se detectada.'),
+  enhancementSuggestions: z.array(z.string()).optional().describe('Sugestões de técnicas de melhoramento de imagem que poderiam ser aplicadas e porquê.'),
+  facialRecognition: z.object({
+    facesDetected: z.number().int().nonnegative().describe('Número de faces humanas detectadas na imagem.'),
+    details: z.array(FacialRecognitionDetailSchema).optional().describe('Detalhes sobre cada face detectada, se a IA puder fornecer (sem identificação pessoal).')
+  }).optional().describe('Resultados da detecção facial. Não realiza identificação pessoal.')
 });
 
 export type AnalyzeImageOutput = z.infer<typeof AnalyzeImageOutputSchema>;
@@ -38,13 +49,20 @@ const analyzeImagePrompt = ai.definePrompt({
   name: 'analyzeImagePrompt',
   input: {schema: AnalyzeImageInputSchema},
   output: {schema: AnalyzeImageOutputSchema},
-  prompt: `You are an expert in image analysis.  Your job is to analyze an image and extract any relevant data from it and generate a detailed description.
+  prompt: `Você é um especialista em análise forense de imagens. Seu trabalho é analisar uma imagem e extrair dados relevantes, gerar uma descrição detalhada, sugerir melhorias e detectar faces.
 
-  Analyze the following image:
+  Analise a seguinte imagem:
   {{media url=photoDataUri}}
 
-  Pay close attention to identifying any text in the image, such as license plates.  If a license plate is detected, provide a plausible reading of the plate, but only if you are at least 75% sure of the reading.
-  Describe the image in detail, including objects, people, and any other relevant information.
+  Siga estas instruções:
+  1.  **Descrição Detalhada**: Descreva a imagem em detalhes, incluindo objetos, pessoas, ambiente, ações e qualquer outra informação relevante.
+  2.  **Leitura de Placa (se aplicável)**: Preste muita atenção à identificação de qualquer texto na imagem, como placas de veículos. Se uma placa for detectada, forneça uma leitura plausível, mas apenas se tiver pelo menos 75% de certeza da leitura.
+  3.  **Sugestões de Melhoramento**: Se a qualidade da imagem puder ser melhorada para análise (ex: baixa luminosidade, borrada, ruído), sugira técnicas de processamento de imagem que poderiam ser aplicadas (ex: ajuste de contraste, nitidez, redução de ruído, deinterlacing). Explique brevemente por que cada técnica seria útil.
+  4.  **Detecção Facial**:
+      *   Indique o número de faces humanas claramente visíveis na imagem.
+      *   Se faces forem detectadas, e se a IA puder fornecer, descreva características gerais (sem fazer identificação pessoal), como a presença de óculos, barba, chapéu, ou a direção do olhar, se discernível. Não tente adivinhar identidade, idade exata ou etnia. Apenas características observáveis.
+
+  Seja objetivo e forneça informações factuais baseadas na imagem.
 `,
 });
 

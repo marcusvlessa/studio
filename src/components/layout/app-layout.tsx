@@ -67,22 +67,22 @@ export function AppLayout({ children }: AppLayoutProps) {
                 <SidebarMenuItem>
                     <SidebarMenuButton 
                         asChild 
-                        tooltip={{ children: "Settings", className: "bg-card text-card-foreground border-border" }}
+                        tooltip={{ children: "Configurações", className: "bg-card text-card-foreground border-border" }}
                     >
                         <Link href="#">
                             <Settings />
-                            <span>Settings</span>
+                            <span>Configurações</span>
                         </Link>
                     </SidebarMenuButton>
                 </SidebarMenuItem>
                 <SidebarMenuItem>
                      <SidebarMenuButton 
                         asChild 
-                        tooltip={{ children: "Log Out", className: "bg-card text-card-foreground border-border" }}
+                        tooltip={{ children: "Sair", className: "bg-card text-card-foreground border-border" }}
                     >
                         <Link href="#">
                             <LogOut />
-                            <span>Log Out</span>
+                            <span>Sair</span>
                         </Link>
                     </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -93,7 +93,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         <header className="sticky top-0 z-10 flex h-14 items-center justify-between gap-4 border-b bg-background/80 px-4 backdrop-blur-sm sm:px-6 md:justify-end">
           <SidebarTrigger className="md:hidden" />
           {/* Add User Avatar/Menu here if needed */}
-          <Button variant="outline" size="sm">User Profile</Button>
+          <Button variant="outline" size="sm">Perfil do Usuário</Button>
         </header>
         <main className="flex-1 overflow-y-auto p-4 sm:p-6">
           {children}

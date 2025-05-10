@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react";
-import { LayoutDashboard, FileText, Mic, GitFork, ImageIcon, ShieldAlert } from "lucide-react";
+import { LayoutDashboard, FileText, Mic, GitFork, ImageIcon, ShieldAlert, FileSearch } from "lucide-react";
 
-export const APP_NAME = "CyberRIC";
+export const APP_NAME = "CyberRIC"; // Mantido como nome próprio, mas poderia ser "Central CyberRIC"
 
 export type NavItem = {
   title: string;
@@ -12,31 +12,31 @@ export type NavItem = {
 
 export const NAV_ITEMS: NavItem[] = [
   {
-    title: "Dashboard",
+    title: "Painel de Controle",
     href: "/",
     icon: LayoutDashboard,
   },
   {
-    title: "Document Analysis",
+    title: "Análise de Documentos",
     href: "/document-analysis",
-    icon: FileText,
+    icon: FileSearch, // Alterado para um ícone mais específico para análise de documentos
   },
   {
-    title: "Audio Analysis",
+    title: "Análise de Áudio",
     href: "/audio-analysis",
     icon: Mic,
   },
   {
-    title: "Link Analysis",
+    title: "Análise de Vínculos",
     href: "/link-analysis",
     icon: GitFork,
   },
   {
-    title: "Image Analysis",
+    title: "Análise de Imagens",
     href: "/image-analysis",
     icon: ImageIcon,
   },
 ];
 
-export const SITE_TITLE = "CyberRIC";
-export const SITE_DESCRIPTION = "Cybercrime Reporting and Intelligence Center";
+export const SITE_TITLE = "CyberRIC"; // Mantido
+export const SITE_DESCRIPTION = "Centro de Inteligência e Denúncia de Cybercrimes";

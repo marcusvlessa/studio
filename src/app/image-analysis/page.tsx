@@ -1,16 +1,19 @@
 "use client";
 
-import { useState, type ChangeEvent } from "react";
+import { useState, type ChangeEvent, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { ImageIcon, FileImage, Search, RotateCcw, Loader2 } from "lucide-react";
+import { ImageIcon, FileImage, Search, RotateCcw, Loader2, Sparkles, Smile } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { analyzeImage, type AnalyzeImageInput, type AnalyzeImageOutput } from "@/ai/flows/analyze-image";
-import Image from "next/image"; // Using next/image for optimized image display
+import Image from "next/image"; 
+import { Badge } from "@/components/ui/badge";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+
 
 export default function ImageAnalysisPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -19,13 +22,14 @@ export default function ImageAnalysisPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
       if (file.type.startsWith("image/")) {
         setSelectedFile(file);
-        setAnalysisResult(null); // Reset previous results
+        setAnalysisResult(null); 
         setProgress(0);
 
         const reader = new FileReader();
@@ -33,23 +37,27 @@ export default function ImageAnalysisPage() {
           setImagePreview(reader.result as string);
         };
         reader.readAsDataURL(file);
-        toast({ title: "Image Selected", description: file.name });
+        toast({ title: "Imagem Selecionada", description: file.name });
       } else {
-        toast({ variant: "destructive", title: "Invalid File Type", description: "Please upload an image file (PNG, JPG, etc.)." });
+        toast({ variant: "destructive", title: "Tipo de Arquivo Inválido", description: "Por favor, envie um arquivo de imagem (PNG, JPG, etc.)." });
         setSelectedFile(null);
         setImagePreview(null);
+        if (fileInputRef.current) {
+            fileInputRef.current.value = "";
+        }
       }
     }
   };
 
   const handleAnalyze = async () => {
     if (!selectedFile || !imagePreview) {
-      toast({ variant: "destructive", title: "No Image Selected", description: "Please select an image file to analyze." });
+      toast({ variant: "destructive", title: "Nenhuma Imagem Selecionada", description: "Por favor, selecione um arquivo de imagem para analisar." });
       return;
     }
 
     setIsLoading(true);
     setProgress(0);
+    setAnalysisResult(null);
     
     let currentProgress = 0;
     const progressInterval = setInterval(() => {
@@ -62,19 +70,18 @@ export default function ImageAnalysisPage() {
     }, 100);
 
     try {
-      // imagePreview already contains the data URI from FileReader
       const photoDataUri = imagePreview;
       
-      setProgress(50); // Indicate processing has started
+      setProgress(50);
 
       const input: AnalyzeImageInput = { photoDataUri };
       const result = await analyzeImage(input);
       setAnalysisResult(result);
       setProgress(100);
-      toast({ title: "Image Analysis Complete", description: "Image processed successfully." });
+      toast({ title: "Análise de Imagem Concluída", description: "Imagem processada com sucesso." });
     } catch (error) {
-      console.error("Image analysis error:", error);
-      toast({ variant: "destructive", title: "Analysis Failed", description: error instanceof Error ? error.message : "An unknown error occurred." });
+      console.error("Erro na análise de imagem:", error);
+      toast({ variant: "destructive", title: "Falha na Análise", description: error instanceof Error ? error.message : "Ocorreu um erro desconhecido." });
       setProgress(0);
     } finally {
       clearInterval(progressInterval);
@@ -88,40 +95,39 @@ export default function ImageAnalysisPage() {
     setAnalysisResult(null);
     setIsLoading(false);
     setProgress(0);
-    const fileInput = document.getElementById('image-upload') as HTMLInputElement;
-    if (fileInput) {
-        fileInput.value = ""; // Reset file input
+    if (fileInputRef.current) {
+        fileInputRef.current.value = "";
     }
-    toast({ title: "Reset", description: "Cleared image and analysis results." });
+    toast({ title: "Reiniciado", description: "Imagem e resultados da análise foram limpos." });
   };
 
 
   return (
     <div className="flex flex-col gap-6">
       <header className="mb-4">
-        <h1 className="text-3xl font-bold tracking-tight">Image Analysis Module</h1>
-        <p className="text-muted-foreground">Upload images for AI-powered analysis, description generation, and potential plate reading.</p>
+        <h1 className="text-3xl font-bold tracking-tight">Módulo de Análise de Imagens</h1>
+        <p className="text-muted-foreground">Envie imagens para análise por IA, geração de descrição, leitura de placas, sugestões de melhoria e detecção facial.</p>
       </header>
 
       <Card>
         <CardHeader>
-          <CardTitle>Upload Image</CardTitle>
-          <CardDescription>Select an image file (PNG, JPG, GIF, etc.) to begin analysis.</CardDescription>
+          <CardTitle>Enviar Imagem</CardTitle>
+          <CardDescription>Selecione um arquivo de imagem (PNG, JPG, GIF, etc.) para iniciar a análise.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid w-full max-w-sm items-center gap-1.5">
-            <Label htmlFor="image-upload">Image File</Label>
-            <Input id="image-upload" type="file" accept="image/*" onChange={handleFileChange} />
+            <Label htmlFor="image-upload">Arquivo de Imagem</Label>
+            <Input id="image-upload" type="file" accept="image/*" onChange={handleFileChange} ref={fileInputRef} />
           </div>
           {selectedFile && (
              <p className="text-sm text-muted-foreground flex items-center">
                 <FileImage className="mr-2 h-4 w-4" /> 
-                Selected: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(2)} KB)
+                Selecionado: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(2)} KB)
             </p>
           )}
           {imagePreview && (
             <div className="mt-4">
-              <Label>Image Preview:</Label>
+              <Label>Pré-visualização da Imagem:</Label>
               <div className="mt-2 w-full max-w-md aspect-video relative overflow-hidden rounded-md border shadow-sm">
                 <Image src={imagePreview} alt="Preview" layout="fill" objectFit="contain" />
               </div>
@@ -129,19 +135,19 @@ export default function ImageAnalysisPage() {
           )}
           {isLoading && (
             <div className="space-y-2">
-              <Label>Analysis Progress:</Label>
+              <Label>Progresso da Análise:</Label>
               <Progress value={progress} className="w-full" />
-              <p className="text-sm text-muted-foreground text-center">{progress}% {progress < 100 && progress > 30 ? "(Analyzing...)" : ""}</p>
+              <p className="text-sm text-muted-foreground text-center">{progress}% {progress < 100 && progress > 30 ? "(Analisando...)" : ""}</p>
             </div>
           )}
         </CardContent>
         <CardFooter className="gap-2">
           <Button onClick={handleAnalyze} disabled={!selectedFile || isLoading}>
             {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
-            {isLoading ? "Analyzing..." : "Analyze Image"}
+            {isLoading ? "Analisando..." : "Analisar Imagem"}
           </Button>
            <Button variant="outline" onClick={handleReset} disabled={isLoading}>
-             <RotateCcw className="mr-2 h-4 w-4" /> Reset
+             <RotateCcw className="mr-2 h-4 w-4" /> Reiniciar
           </Button>
         </CardFooter>
       </Card>
@@ -149,23 +155,65 @@ export default function ImageAnalysisPage() {
       {analysisResult && (
         <Card>
           <CardHeader>
-            <CardTitle>Analysis Results</CardTitle>
+            <CardTitle>Resultados da Análise</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-6">
             <div>
-              <Label htmlFor="description-output">Generated Description:</Label>
-              <Textarea id="description-output" value={analysisResult.description} readOnly rows={6} className="bg-muted/50" />
+              <Label htmlFor="description-output">Descrição Gerada:</Label>
+              <Textarea id="description-output" value={analysisResult.description} readOnly rows={6} className="bg-muted/50 mt-1" />
             </div>
+            
             {analysisResult.possiblePlateRead && (
               <div>
-                <Label htmlFor="plate-output">Possible License Plate Read:</Label>
-                <Input id="plate-output" value={analysisResult.possiblePlateRead} readOnly className="bg-muted/50 font-mono text-lg" />
-                <p className="text-xs text-muted-foreground mt-1">Note: License plate readings are suggestive and may not be 100% accurate.</p>
+                <Label htmlFor="plate-output">Possível Leitura de Placa:</Label>
+                <Input id="plate-output" value={analysisResult.possiblePlateRead} readOnly className="bg-muted/50 font-mono text-lg mt-1" />
+                <p className="text-xs text-muted-foreground mt-1">Nota: Leituras de placa são sugestivas e podem não ser 100% precisas.</p>
               </div>
             )}
             {!analysisResult.possiblePlateRead && (
-                 <p className="text-sm text-muted-foreground">No license plate confidently detected.</p>
+                 <p className="text-sm text-muted-foreground">Nenhuma placa de veículo detectada com confiança.</p>
             )}
+
+            {analysisResult.enhancementSuggestions && analysisResult.enhancementSuggestions.length > 0 && (
+                <div>
+                    <h3 className="text-md font-semibold mb-2 flex items-center"><Sparkles className="mr-2 h-5 w-5 text-primary"/> Sugestões de Melhoramento de Imagem</h3>
+                    <ul className="list-disc list-inside space-y-1 text-sm pl-2 bg-muted/30 p-3 rounded-md">
+                        {analysisResult.enhancementSuggestions.map((suggestion, index) => (
+                            <li key={index}>{suggestion}</li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+
+            {analysisResult.facialRecognition && (
+                <div>
+                     <h3 className="text-md font-semibold mb-2 flex items-center"><Smile className="mr-2 h-5 w-5 text-primary"/> Detecção Facial</h3>
+                    <div className="bg-muted/30 p-3 rounded-md space-y-2">
+                        <p className="text-sm"><strong>Faces Detectadas:</strong> {analysisResult.facialRecognition.facesDetected}</p>
+                        {analysisResult.facialRecognition.facesDetected > 0 && analysisResult.facialRecognition.details && analysisResult.facialRecognition.details.length > 0 && (
+                            <Accordion type="single" collapsible className="w-full">
+                                <AccordionItem value="face-details">
+                                <AccordionTrigger className="text-sm">Ver Detalhes das Faces</AccordionTrigger>
+                                <AccordionContent>
+                                    <ul className="list-disc list-inside space-y-1 text-sm pl-2">
+                                    {analysisResult.facialRecognition.details.map((detail, index) => (
+                                        <li key={index}>
+                                            Face {index + 1}: 
+                                            {detail.confidence && ` Confiança: ${(detail.confidence * 100).toFixed(0)}%.`}
+                                            {detail.attributes && Object.keys(detail.attributes).length > 0 && ` Atributos: ${Object.entries(detail.attributes).map(([key, value]) => `${key}: ${value}`).join(', ')}`}
+                                            {!detail.confidence && (!detail.attributes || Object.keys(detail.attributes).length === 0) && " Sem detalhes adicionais."}
+                                        </li>
+                                    ))}
+                                    </ul>
+                                </AccordionContent>
+                                </AccordionItem>
+                            </Accordion>
+                        )}
+                         <p className="text-xs text-muted-foreground mt-1">Nota: A detecção facial indica a presença de faces e características gerais, não realiza identificação pessoal.</p>
+                    </div>
+                </div>
+            )}
+
           </CardContent>
         </Card>
       )}

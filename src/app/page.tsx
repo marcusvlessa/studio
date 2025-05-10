@@ -6,12 +6,12 @@ import { BarChart, LineChart, Bar, CartesianGrid, XAxis, YAxis, Line, Pie, PieCh
 import Image from "next/image";
 
 const barChartData = [
-  { month: "January", desktop: 186, mobile: 80 },
-  { month: "February", desktop: 305, mobile: 200 },
-  { month: "March", desktop: 237, mobile: 120 },
-  { month: "April", desktop: 73, mobile: 190 },
-  { month: "May", desktop: 209, mobile: 130 },
-  { month: "June", desktop: 214, mobile: 140 },
+  { month: "Janeiro", desktop: 186, mobile: 80 },
+  { month: "Fevereiro", desktop: 305, mobile: 200 },
+  { month: "Março", desktop: 237, mobile: 120 },
+  { month: "Abril", desktop: 73, mobile: 190 },
+  { month: "Maio", desktop: 209, mobile: 130 },
+  { month: "Junho", desktop: 214, mobile: 140 },
 ];
 
 const chartConfigBar = {
@@ -29,7 +29,7 @@ const lineChartData = [
 ];
 
 const chartConfigLine = {
-  incidents: { label: "Incidents", color: "hsl(var(--chart-1))" },
+  incidents: { label: "Incidentes", color: "hsl(var(--chart-1))" },
 };
 
 const pieChartData = [
@@ -44,39 +44,39 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col gap-6">
       <header className="mb-4">
-        <h1 className="text-3xl font-bold tracking-tight">Interactive Crime Dashboard</h1>
-        <p className="text-muted-foreground">Visualize cybercrime statistics and trends.</p>
+        <h1 className="text-3xl font-bold tracking-tight">Painel Interativo de Crimes</h1>
+        <p className="text-muted-foreground">Visualize estatísticas e tendências de crimes cibernéticos.</p>
       </header>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Reports</CardTitle>
+            <CardTitle className="text-sm font-medium">Total de Denúncias</CardTitle>
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">1,234</div>
-            <p className="text-xs text-muted-foreground">+15% from last month</p>
+            <div className="text-2xl font-bold">1.234</div>
+            <p className="text-xs text-muted-foreground">+15% desde o último mês</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Cases</CardTitle>
+            <CardTitle className="text-sm font-medium">Casos Ativos</CardTitle>
             <AlertTriangle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">56</div>
-            <p className="text-xs text-muted-foreground">3 new cases today</p>
+            <p className="text-xs text-muted-foreground">3 novos casos hoje</p>
           </CardContent>
         </Card>
          <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">High Priority Alerts</CardTitle>
+            <CardTitle className="text-sm font-medium">Alertas de Alta Prioridade</CardTitle>
             <AlertTriangle className="h-4 w-4 text-destructive" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-destructive">12</div>
-            <p className="text-xs text-muted-foreground">Requires immediate attention</p>
+            <p className="text-xs text-muted-foreground">Requer atenção imediata</p>
           </CardContent>
         </Card>
       </div>
@@ -84,8 +84,8 @@ export default function DashboardPage() {
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Crime Incidents by Type</CardTitle>
-            <CardDescription>Last 6 months</CardDescription>
+            <CardTitle>Incidentes Criminais por Tipo</CardTitle>
+            <CardDescription>Últimos 6 meses</CardDescription>
           </CardHeader>
           <CardContent>
             <ChartContainer config={chartConfigBar} className="h-[300px] w-full">
@@ -110,8 +110,8 @@ export default function DashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Incident Trends</CardTitle>
-            <CardDescription>Weekly incident reports</CardDescription>
+            <CardTitle>Tendências de Incidentes</CardTitle>
+            <CardDescription>Denúncias semanais de incidentes</CardDescription>
           </CardHeader>
           <CardContent>
             <ChartContainer config={chartConfigLine} className="h-[300px] w-full">
@@ -126,7 +126,7 @@ export default function DashboardPage() {
                   tickLine={false}
                   axisLine={false}
                   tickMargin={8}
-                  tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  tickFormatter={(value) => new Date(value).toLocaleDateString('pt-BR', { month: 'short', day: 'numeric' })}
                 />
                 <YAxis />
                 <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="line" />} />
@@ -147,8 +147,8 @@ export default function DashboardPage() {
       <div className="grid gap-6 md:grid-cols-2">
         <Card className="col-span-1">
             <CardHeader>
-                <CardTitle>Crime Distribution</CardTitle>
-                <CardDescription>Breakdown of cybercrime types.</CardDescription>
+                <CardTitle>Distribuição de Crimes</CardTitle>
+                <CardDescription>Detalhamento dos tipos de crimes cibernéticos.</CardDescription>
             </CardHeader>
             <CardContent className="h-[350px]">
                 <ResponsiveContainer width="100%" height="100%">
@@ -168,22 +168,22 @@ export default function DashboardPage() {
         </Card>
         <Card className="col-span-1">
           <CardHeader>
-            <CardTitle>Geospatial Hotspots</CardTitle>
-            <CardDescription>Concentration of reported incidents.</CardDescription>
+            <CardTitle>Pontos Críticos Geoespaciais</CardTitle>
+            <CardDescription>Concentração de incidentes reportados.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="aspect-video w-full overflow-hidden rounded-lg border bg-muted">
               <Image
                 src="https://picsum.photos/seed/map/800/450"
-                alt="Crime Hotspot Map"
+                alt="Mapa de Pontos Críticos de Crimes"
                 width={800}
                 height={450}
                 className="h-full w-full object-cover"
-                data-ai-hint="world map"
+                data-ai-hint="mapa mundo"
               />
             </div>
              <p className="mt-2 text-sm text-muted-foreground flex items-center">
-                <MapPin className="mr-1 h-4 w-4" /> Placeholder map showing incident clusters.
+                <MapPin className="mr-1 h-4 w-4" /> Mapa de exemplo mostrando agrupamentos de incidentes.
             </p>
           </CardContent>
         </Card>

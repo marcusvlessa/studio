@@ -5,39 +5,37 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { GitFork, Search, RotateCcw, Loader2, FileText, AlertCircle } from "lucide-react"; // Users icon removed as it wasn't used. FileUp removed.
+import { GitFork, Search, RotateCcw, Loader2, FileText, AlertCircle, HelpCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { findEntityRelationships, type FindEntityRelationshipsInput, type FindEntityRelationshipsOutput } from "@/ai/flows/find-entity-relationships";
+import { analyzeDocument, type AnalyzeDocumentInput } from "@/ai/flows/analyze-document-flow"; // Import for PDF processing
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress"; // Added Progress component
+import { Progress } from "@/components/ui/progress";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export default function LinkAnalysisPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [relationships, setRelationships] = useState<FindEntityRelationshipsOutput['relationships'] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [progress, setProgress] = useState(0); // Added progress state
+  const [progress, setProgress] = useState(0);
+  const [processingMessage, setProcessingMessage] = useState("Analisando Vínculos...");
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      // For now, primary focus is CSV, TXT.
-      // Complex parsing for XLS, ANX, ANB is out of scope for simple client-side or LLM processing.
-      const allowedTypes = ["text/csv", "text/plain"];
-      const allowedExtensions = [".csv", ".txt"];
-      
-      const fileTypeSupported = allowedTypes.includes(file.type);
+      const allowedExtensions = [".csv", ".txt", ".pdf", ".xls", ".xlsx", ".anb", ".anx"];
       const fileExtensionSupported = allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
 
-      if (fileTypeSupported || fileExtensionSupported) {
+      if (fileExtensionSupported) {
         setSelectedFile(file);
         setRelationships(null);
         setProgress(0);
         toast({ title: "Arquivo Selecionado", description: file.name });
       } else {
-        toast({ variant: "destructive", title: "Tipo de Arquivo Inválido", description: "Por favor, envie um arquivo CSV ou TXT. Formatos como XLS, ANX, ANB não são suportados para extração direta de entidades no momento." });
+        toast({ variant: "destructive", title: "Tipo de Arquivo Inválido", description: `Por favor, envie um arquivo com uma das seguintes extensões: ${allowedExtensions.join(", ")}.` });
         setSelectedFile(null);
         if (fileInputRef.current) {
             fileInputRef.current.value = "";
@@ -46,22 +44,23 @@ export default function LinkAnalysisPage() {
     }
   };
 
-  // Basic text parsing: assumes entities are line-separated or comma-separated.
-  // This can be made more robust based on expected structures.
   const parseEntitiesFromText = (text: string): string[] => {
     const entities = new Set<string>();
-    // Try splitting by new lines first
-    let potentialEntities = text.split(/\r?\n/);
+    let potentialEntities = text.split(/\r?\n/); // New lines
 
-    // If mostly one line, or few lines, try splitting by comma as well
-    if (potentialEntities.length < 5) {
-        const commaEntities = text.split(',');
-        potentialEntities = [...potentialEntities, ...commaEntities];
+    if (potentialEntities.length < 10 && text.includes(',')) { // If few lines, also try commas
+        potentialEntities = [...potentialEntities, ...text.split(',')];
     }
-    
+    if (potentialEntities.length < 10 && text.includes(';')) { // And semicolons
+        potentialEntities = [...potentialEntities, ...text.split(';')];
+    }
+     if (potentialEntities.length < 10 && text.includes('\t')) { // And tabs
+        potentialEntities = [...potentialEntities, ...text.split('\t')];
+    }
+
     potentialEntities.forEach(line => {
         const trimmedLine = line.trim();
-        if (trimmedLine && trimmedLine.length > 1 && trimmedLine.length < 200) { // Basic sanity check for entity length
+        if (trimmedLine && trimmedLine.length > 1 && trimmedLine.length < 200) { 
             entities.add(trimmedLine);
         }
     });
@@ -71,43 +70,98 @@ export default function LinkAnalysisPage() {
 
   const handleAnalyze = async () => {
     if (!selectedFile) {
-      toast({ variant: "destructive", title: "Nenhum Arquivo Fornecido", description: "Por favor, envie um arquivo CSV ou TXT com as entidades." });
+      toast({ variant: "destructive", title: "Nenhum Arquivo Fornecido", description: "Por favor, envie um arquivo para análise." });
       return;
     }
 
     setIsLoading(true);
     setProgress(0);
+    setProcessingMessage("Iniciando análise...");
     setRelationships(null);
 
-    let currentProgress = 0;
-    const progressInterval = setInterval(() => {
-      currentProgress += 10; // Faster progress for this shorter operation
-      if (currentProgress <= 40) { 
-        setProgress(currentProgress);
-      } else {
-        // Hold progress
-      }
-    }, 150);
+    let entities: string[] = [];
 
     try {
-      const fileText = await selectedFile.text();
-      setProgress(60); // File read
+      if (selectedFile.type === "application/pdf") {
+        setProgress(10);
+        setProcessingMessage("Lendo arquivo PDF...");
+        const reader = new FileReader();
+        reader.readAsDataURL(selectedFile);
+        
+        await new Promise<void>((resolve, reject) => {
+            reader.onloadend = async (e) => {
+                const fileDataUri = e.target?.result as string;
+                if (!fileDataUri) {
+                    toast({ variant: "destructive", title: "Erro ao Ler PDF", description: "Não foi possível ler o conteúdo do arquivo PDF."});
+                    reject(new Error("Erro ao ler PDF"));
+                    return;
+                }
+                setProgress(30);
+                setProcessingMessage("Extraindo texto do PDF com IA...");
+                try {
+                    const docInput: AnalyzeDocumentInput = { fileDataUri, fileName: selectedFile.name };
+                    const docResult = await analyzeDocument(docInput);
+                    setProgress(60);
+                    setProcessingMessage("Processando texto extraído...");
+                    if (docResult.extractedText) {
+                        entities = parseEntitiesFromText(docResult.extractedText);
+                    } else {
+                        toast({ variant: "destructive", title: "Extração de Texto Falhou", description: "Não foi possível extrair texto do PDF." });
+                    }
+                    resolve();
+                } catch (pdfError) {
+                    reject(pdfError);
+                }
+            };
+            reader.onerror = () => {
+                 toast({ variant: "destructive", title: "Erro ao Ler PDF", description: "Ocorreu um erro ao tentar ler o arquivo PDF."});
+                 reject(new Error("Erro no reader do PDF."));
+            }
+        });
 
-      const entities = parseEntitiesFromText(fileText);
+      } else if (selectedFile.type === "text/csv" || selectedFile.type === "text/plain" || selectedFile.name.toLowerCase().endsWith(".txt") || selectedFile.name.toLowerCase().endsWith(".csv")) {
+        setProgress(20);
+        setProcessingMessage("Lendo arquivo de texto...");
+        const fileText = await selectedFile.text();
+        setProgress(50);
+        setProcessingMessage("Extraindo entidades do texto...");
+        entities = parseEntitiesFromText(fileText);
+      } else {
+        // For XLS, XLSX, ANB, ANX - show warning, attempt text extraction (might fail or be garbage)
+        toast({ 
+            variant: "default", 
+            title: "Formato de Arquivo Complexo", 
+            description: "Para arquivos como XLS, XLSX, ANB, ANX, a extração automática de entidades é limitada. Tentaremos uma extração de texto básica. Para melhores resultados, converta para CSV/TXT ou cole o conteúdo relevante.",
+            duration: 8000,
+        });
+        setProgress(20);
+        setProcessingMessage("Tentando ler arquivo complexo...");
+        try {
+            const fileText = await selectedFile.text(); // This will likely be garbled for binary files
+            setProgress(50);
+            setProcessingMessage("Extraindo entidades (pode ser limitado)...");
+            entities = parseEntitiesFromText(fileText);
+        } catch (readError) {
+            toast({ variant: "destructive", title: "Erro ao Ler Arquivo Complexo", description: "Não foi possível ler o conteúdo. Considere converter para TXT/CSV." });
+            setIsLoading(false);
+            setProgress(0);
+            return;
+        }
+      }
 
       if (entities.length === 0) {
         toast({ variant: "destructive", title: "Nenhuma Entidade Encontrada", description: "O arquivo não contém entidades válidas ou está mal formatado para extração automática." });
         setIsLoading(false);
-        clearInterval(progressInterval);
         setProgress(0);
         return;
       }
       
-      setProgress(80); // Entities parsed, AI call starting
+      setProgress(70);
+      setProcessingMessage("Analisando vínculos com IA...");
       const input: FindEntityRelationshipsInput = { entities };
       const result = await findEntityRelationships(input);
       setRelationships(result.relationships);
-      setProgress(100); // Analysis complete
+      setProgress(100);
 
       if (result.relationships && result.relationships.length > 0) {
         toast({ title: "Análise de Vínculos Concluída", description: "Foram encontrados vínculos potenciais entre as entidades." });
@@ -119,7 +173,6 @@ export default function LinkAnalysisPage() {
       toast({ variant: "destructive", title: "Falha na Análise", description: error instanceof Error ? error.message : "Ocorreu um erro desconhecido ao processar o arquivo ou analisar os vínculos." });
       setProgress(0);
     } finally {
-      clearInterval(progressInterval);
       setIsLoading(false);
     }
   };
@@ -129,6 +182,7 @@ export default function LinkAnalysisPage() {
     setRelationships(null);
     setIsLoading(false);
     setProgress(0);
+    setProcessingMessage("Analisando Vínculos...");
     if (fileInputRef.current) {
         fileInputRef.current.value = "";
     }
@@ -139,21 +193,29 @@ export default function LinkAnalysisPage() {
     <div className="flex flex-col gap-6">
       <header className="mb-4">
         <h1 className="text-3xl font-bold tracking-tight">Módulo de Análise de Vínculos</h1>
-        <p className="text-muted-foreground">Envie um arquivo CSV ou TXT com entidades para identificar e visualizar seus relacionamentos.</p>
+        <p className="text-muted-foreground">Envie arquivos (TXT, CSV, PDF, XLS, XLSX, ANB, ANX) com entidades para identificar e visualizar seus relacionamentos.</p>
       </header>
 
       <Card>
         <CardHeader>
-          <CardTitle>Enviar Arquivo de Entidades (CSV, TXT)</CardTitle>
+          <CardTitle>Enviar Arquivo de Entidades</CardTitle>
           <CardDescription>
-            Forneça um arquivo de texto (CSV ou TXT) contendo as entidades (ex: nomes, telefones, empresas, locais) para analisar suas conexões.
-            O sistema tentará extrair entidades separadas por linha ou vírgula.
+            Forneça um arquivo contendo as entidades (ex: nomes, telefones, empresas, locais) para analisar suas conexões.
+            Para arquivos PDF, o texto será extraído. Para CSV/TXT, as entidades serão extraídas por linha ou delimitadores comuns.
+            Formatos como XLS, XLSX, ANB, ANX têm suporte limitado para extração automática.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid w-full max-w-sm items-center gap-1.5">
-            <Label htmlFor="entities-file-upload">Arquivo (CSV, TXT)</Label>
-            <Input id="entities-file-upload" type="file" accept=".csv,.txt,text/csv,text/plain" onChange={handleFileChange} ref={fileInputRef} disabled={isLoading}/>
+            <Label htmlFor="entities-file-upload">Arquivo</Label>
+            <Input 
+              id="entities-file-upload" 
+              type="file" 
+              accept=".csv,.txt,.pdf,.xls,.xlsx,.anb,.anx,text/csv,text/plain,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" 
+              onChange={handleFileChange} 
+              ref={fileInputRef} 
+              disabled={isLoading}
+            />
           </div>
            {selectedFile && (
              <p className="text-sm text-muted-foreground flex items-center">
@@ -166,11 +228,7 @@ export default function LinkAnalysisPage() {
               <Label>Progresso da Análise:</Label>
               <Progress value={progress} className="w-full h-2.5" />
               <p className="text-sm text-muted-foreground text-center">
-                {progress}%
-                {progress < 50 && " (Lendo arquivo...)"}
-                {progress >= 50 && progress < 80 && " (Extraindo entidades...)"}
-                {progress >= 80 && progress < 100 && " (Analisando vínculos com IA...)"}
-                {progress === 100 && " (Concluído!)"}
+                {progress}% ({processingMessage})
               </p>
             </div>
           )}
@@ -178,7 +236,7 @@ export default function LinkAnalysisPage() {
         <CardFooter className="gap-2">
           <Button onClick={handleAnalyze} disabled={!selectedFile || isLoading}>
             {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
-            {isLoading ? "Analisando Vínculos..." : "Encontrar Vínculos"}
+            {isLoading ? "Analisando..." : "Encontrar Vínculos"}
           </Button>
            <Button variant="outline" onClick={handleReset} disabled={isLoading}>
              <RotateCcw className="mr-2 h-4 w-4" /> Reiniciar
@@ -186,7 +244,17 @@ export default function LinkAnalysisPage() {
         </CardFooter>
       </Card>
 
-      {/* Removed the separate loading card as progress is now shown in the upload card */}
+      <Alert variant="default" className="mt-4">
+        <HelpCircle className="h-4 w-4" />
+        <AlertTitle>Dicas para Melhor Análise</AlertTitle>
+        <AlertDescription>
+          <ul className="list-disc list-inside text-xs">
+            <li>Para arquivos <strong>CSV/TXT</strong>: certifique-se que as entidades estão separadas por linha, vírgula, ponto e vírgula ou tabulação.</li>
+            <li>Arquivos <strong>PDF</strong>: o texto será extraído automaticamente para identificar entidades. PDFs baseados em imagem podem não ter bons resultados.</li>
+            <li>Arquivos <strong>XLS/XLSX/ANB/ANX</strong>: A extração automática é complexa. Para melhores resultados, converta os dados relevantes para CSV ou TXT, ou cole o texto diretamente.</li>
+          </ul>
+        </AlertDescription>
+      </Alert>
 
       {relationships && relationships.length > 0 && (
         <Card>
@@ -236,7 +304,7 @@ export default function LinkAnalysisPage() {
             <CardContent className="p-6 flex flex-col items-center justify-center min-h-[200px]">
                 <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
                 <p className="text-muted-foreground text-center">Nenhum vínculo direto encontrado para as entidades fornecidas no arquivo.</p>
-                <p className="text-xs text-muted-foreground mt-1 text-center">Verifique se o arquivo está formatado corretamente (entidades por linha ou separadas por vírgula) e contém dados válidos.</p>
+                <p className="text-xs text-muted-foreground mt-1 text-center">Verifique se o arquivo está formatado corretamente e contém dados válidos, ou se o conteúdo textual extraído foi suficiente.</p>
             </CardContent>
         </Card>
       )}

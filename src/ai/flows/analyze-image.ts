@@ -32,7 +32,7 @@ const FacialRecognitionDetailSchema = z.object({
 const AnalyzeImageOutputSchema = z.object({
   description: z.string().describe('Uma descrição detalhada do conteúdo da imagem.'),
   possiblePlateRead: z.string().optional().describe('Uma leitura plausível de placa de veículo, se detectada.'),
-  enhancementSuggestions: z.array(z.string()).optional().describe('Sugestões de técnicas de melhoramento de imagem que poderiam ser aplicadas e porquê.'),
+  enhancementSuggestions: z.array(z.string()).optional().describe('Sugestões de técnicas de melhoramento de imagem que poderiam ser aplicadas e porquê, incluindo as que foram implicitamente usadas pela IA para a análise (se aplicável).'),
   facialRecognition: z.object({
     facesDetected: z.number().int().nonnegative().describe('Número de faces humanas detectadas na imagem.'),
     details: z.array(FacialRecognitionDetailSchema).optional().describe('Detalhes sobre cada face detectada, se a IA puder fornecer (sem identificação pessoal).')
@@ -49,21 +49,32 @@ const analyzeImagePrompt = ai.definePrompt({
   name: 'analyzeImagePrompt',
   input: {schema: AnalyzeImageInputSchema},
   output: {schema: AnalyzeImageOutputSchema},
-  prompt: `Você é um especialista em análise forense de imagens. Seu trabalho é analisar uma imagem e extrair dados relevantes, gerar uma descrição detalhada, sugerir melhorias e detectar faces.
+  prompt: `Você é um especialista em análise forense de imagens. Seu trabalho é analisar uma imagem e extrair dados relevantes, gerar uma descrição detalhada, sugerir melhorias (e listar as aplicadas por você, se houver) e detectar faces.
 
   Analise a seguinte imagem:
   {{media url=photoDataUri}}
 
   Siga estas instruções:
   1.  **Descrição Detalhada**: Descreva a imagem em detalhes, incluindo objetos, pessoas, ambiente, ações e qualquer outra informação relevante.
-  2.  **Leitura de Placa (se aplicável)**: Preste muita atenção à identificação de qualquer texto na imagem, como placas de veículos. Se uma placa for detectada, forneça uma leitura plausível, mas apenas se tiver pelo menos 75% de certeza da leitura.
-  3.  **Sugestões de Melhoramento**: Se a qualidade da imagem puder ser melhorada para análise (ex: baixa luminosidade, borrada, ruído), sugira técnicas de processamento de imagem que poderiam ser aplicadas (ex: ajuste de contraste, nitidez, redução de ruído, deinterlacing). Explique brevemente por que cada técnica seria útil.
+  2.  **Leitura de Placa (se aplicável)**: Preste muita atenção à identificação de qualquer texto na imagem, como placas de veículos. Se uma placa for detectada, forneça uma leitura plausível, mas apenas se tiver pelo menos 75% de certeza da leitura. Se nenhuma placa for claramente legível, indique isso.
+  3.  **Sugestões e Aplicações de Melhoramento**:
+      *   Se a qualidade da imagem puder ser melhorada para análise (ex: baixa luminosidade, borrada, ruído), sugira técnicas de processamento de imagem que poderiam ser aplicadas (ex: ajuste de contraste, nitidez, redução de ruído, deinterlacing). Explique brevemente por que cada técnica seria útil.
+      *   Se, para realizar sua análise, você implicitamente aplicou alguma técnica de melhoramento (ex: aumento de nitidez para ler um texto), mencione quais foram.
   4.  **Detecção Facial**:
-      *   Indique o número de faces humanas claramente visíveis na imagem.
-      *   Se faces forem detectadas, e se a IA puder fornecer, descreva características gerais (sem fazer identificação pessoal), como a presença de óculos, barba, chapéu, ou a direção do olhar, se discernível. Não tente adivinhar identidade, idade exata ou etnia. Apenas características observáveis.
+      *   Indique o número de faces humanas claramente visíveis na imagem. Se nenhuma face for detectada, retorne 0.
+      *   Se faces forem detectadas, e se a IA puder fornecer, descreva características gerais para cada uma (sem fazer identificação pessoal), como a presença de óculos, barba, chapéu, ou a direção do olhar, se discernível. Não tente adivinhar identidade, idade exata ou etnia. Apenas características observáveis. Forneça a caixa delimitadora (bounding box) e confiança se possível.
+      *   Se a IA não puder fornecer detalhes faciais mesmo detectando faces, indique isso.
 
-  Seja objetivo e forneça informações factuais baseadas na imagem.
+  Seja objetivo e forneça informações factuais baseadas na imagem. Certifique-se de preencher todos os campos do schema de saída, mesmo que com valores indicando ausência de informação (ex: "Nenhuma placa detectada", lista vazia para sugestões, 0 para faces).
 `,
+  config: {
+    safetySettings: [
+      { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+    ],
+  },
 });
 
 const analyzeImageFlow = ai.defineFlow(
@@ -74,6 +85,9 @@ const analyzeImageFlow = ai.defineFlow(
   },
   async input => {
     const {output} = await analyzeImagePrompt(input);
-    return output!;
+    if (!output) {
+        throw new Error("A análise da imagem não retornou um resultado válido da IA.");
+    }
+    return output;
   }
 );

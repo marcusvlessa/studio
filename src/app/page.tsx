@@ -1,8 +1,8 @@
 "use client";
-import { BarChart, LineChart, TrendingUp, MapPin, AlertTriangle } from "lucide-react";
+import { TrendingUp, MapPin, AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
-import { Bar, CartesianGrid, XAxis, YAxis, Line, Pie, PieChart as RechartsPieChart, ResponsiveContainer, Tooltip as RechartsTooltip, Legend as RechartsLegend } from "recharts";
+import { BarChart, LineChart, Bar, CartesianGrid, XAxis, YAxis, Line, Pie, PieChart as RechartsPieChart, ResponsiveContainer, Tooltip as RechartsTooltip, Legend as RechartsLegend } from "recharts";
 import Image from "next/image";
 
 const barChartData = [
@@ -98,6 +98,7 @@ export default function DashboardPage() {
                   axisLine={false}
                   tickFormatter={(value) => value.slice(0, 3)}
                 />
+                <YAxis />
                 <ChartTooltip content={<ChartTooltipContent hideLabel />} />
                 <ChartLegend content={<ChartLegendContent />} />
                 <Bar dataKey="desktop" fill="var(--color-desktop)" radius={4} />
@@ -127,6 +128,7 @@ export default function DashboardPage() {
                   tickMargin={8}
                   tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                 />
+                <YAxis />
                 <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="line" />} />
                  <ChartLegend content={<ChartLegendContent />} />
                 <Line

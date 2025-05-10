@@ -66,32 +66,40 @@ export default function AudioAnalysisPage() {
         clearInterval(progressInterval);
         const audioDataUri = e.target?.result as string;
         if (!audioDataUri) {
-          throw new Error("Não foi possível ler o arquivo.");
+          setIsLoading(false);
+          setProgress(0);
+          toast({variant: "destructive", title: "Erro ao Ler Arquivo", description: "Não foi possível ler o conteúdo do arquivo de áudio."});
+          return;
         }
         
         setProgress(50); // File read, AI call starting
 
-        const input: TranscribeAudioInput = { audioDataUri };
-        const result = await transcribeAudio(input);
-        setTranscriptionResult(result);
-        setProgress(100);
-        toast({ title: "Transcrição Concluída", description: "Áudio processado com sucesso." });
+        try {
+            const input: TranscribeAudioInput = { audioDataUri };
+            const result = await transcribeAudio(input);
+            setTranscriptionResult(result);
+            setProgress(100);
+            toast({ title: "Transcrição Concluída", description: "Áudio processado com sucesso." });
+        } catch (aiError) {
+            console.error("Erro na chamada da IA:", aiError);
+            toast({ variant: "destructive", title: "Falha na Análise por IA", description: aiError instanceof Error ? aiError.message : "Ocorreu um erro durante a análise pela IA." });
+            setProgress(0); // Reset progress on AI error
+        } finally {
+            setIsLoading(false); // Set loading to false after AI call (success or failure)
+        }
       };
       reader.onerror = () => {
         clearInterval(progressInterval);
-        throw new Error("Erro ao ler o arquivo.");
+        setIsLoading(false);
+        setProgress(0);
+        toast({ variant: "destructive", title: "Erro ao Ler Arquivo", description: "Ocorreu um erro ao tentar ler o arquivo de áudio."});
       }
     } catch (error) {
       clearInterval(progressInterval);
       console.error("Erro na transcrição:", error);
       toast({ variant: "destructive", title: "Falha na Transcrição", description: error instanceof Error ? error.message : "Ocorreu um erro desconhecido." });
       setProgress(0);
-    } finally {
-      // setIsLoading will be set by onload or onerror
-      // To ensure it's false if an error occurs before reader events:
-       if (isLoading && !transcriptionResult && progress !== 100) {
-        setIsLoading(false);
-      }
+      setIsLoading(false); // Ensure loading is false on catch
     }
   };
 

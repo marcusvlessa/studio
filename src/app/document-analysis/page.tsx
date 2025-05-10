@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { FileUp, RotateCcw, Search, Loader2, FileTextIcon, CheckCircle, AlertCircle, Info, UserCheck, UserEdit, UserTie, ListChecks, AlertTriangle, BookOpen, Scale } from "lucide-react";
+import { FileUp, RotateCcw, Search, Loader2, FileTextIcon, CheckCircle, AlertCircle, Info, UserCheck, FileSignature, ListChecks, AlertTriangle, BookOpen, Scale, Gavel } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { analyzeDocument, type AnalyzeDocumentInput, type AnalyzeDocumentOutput } from "@/ai/flows/analyze-document-flow";
 import { Badge } from "@/components/ui/badge";
@@ -108,23 +108,20 @@ export default function DocumentAnalysisPage() {
         setAnalysisResult(result);
         setProgress(100);
         toast({ title: "Análise Concluída", description: "Documento processado com sucesso." });
+        setIsLoading(false); // Ensure loading is false on success
       };
       reader.onerror = () => {
         clearInterval(progressInterval);
-        throw new Error("Erro ao ler o arquivo.");
+        setIsLoading(false); // Ensure loading is false on error
+        setProgress(0);
+        toast({ variant: "destructive", title: "Erro ao Ler Arquivo", description: "Ocorreu um erro ao tentar ler o arquivo."});
       }
     } catch (error) {
       clearInterval(progressInterval);
       console.error("Erro na análise do documento:", error);
       toast({ variant: "destructive", title: "Falha na Análise", description: error instanceof Error ? error.message : "Ocorreu um erro desconhecido." });
       setProgress(0);
-    } finally {
-      // setIsLoading will be set to false when onloadend completes (success or error handling within it)
-      // or if an error occurs before onloadend.
-      // To ensure isLoading is false if an early error happens in the try block:
-      if (isLoading && !analysisResult && progress !== 100) {
-        setIsLoading(false);
-      }
+      setIsLoading(false); // Ensure loading is false on catch
     }
   };
 
@@ -243,7 +240,7 @@ export default function DocumentAnalysisPage() {
                 </Card>
             )}
             
-            <Accordion type="multiple" className="w-full space-y-4">
+            <Accordion type="multiple" className="w-full space-y-4" defaultValue={["investigator-analysis", "clerk-report", "delegate-assessment"]}>
                 {analysisResult.investigatorAnalysis && (
                     <AccordionItem value="investigator-analysis" className="border rounded-lg bg-card">
                         <AccordionTrigger className="p-4 text-lg font-semibold hover:no-underline">
@@ -271,7 +268,7 @@ export default function DocumentAnalysisPage() {
                 {analysisResult.clerkReport && (
                      <AccordionItem value="clerk-report" className="border rounded-lg bg-card">
                         <AccordionTrigger className="p-4 text-lg font-semibold hover:no-underline">
-                             <div className="flex items-center gap-2"><UserEdit className="h-6 w-6 text-orange-600" /> Relatório do Escrivão</div>
+                             <div className="flex items-center gap-2"><FileSignature className="h-6 w-6 text-orange-600" /> Relatório do Escrivão</div>
                         </AccordionTrigger>
                         <AccordionContent className="p-4 pt-0 space-y-4">
                             <div>
@@ -297,7 +294,7 @@ export default function DocumentAnalysisPage() {
                 {analysisResult.delegateAssessment && (
                     <AccordionItem value="delegate-assessment" className="border rounded-lg bg-card">
                         <AccordionTrigger className="p-4 text-lg font-semibold hover:no-underline">
-                             <div className="flex items-center gap-2"><UserTie className="h-6 w-6 text-red-600" /> Avaliação do Delegado</div>
+                             <div className="flex items-center gap-2"><Gavel className="h-6 w-6 text-red-600" /> Avaliação do Delegado</div>
                         </AccordionTrigger>
                         <AccordionContent className="p-4 pt-0 space-y-4">
                              <div>
@@ -338,13 +335,13 @@ export default function DocumentAnalysisPage() {
                 </Card>
             )}
 
-            {!analysisResult.extractedText && !isLoading && (
+            {!analysisResult.extractedText && !isLoading && selectedFile && ( // Added selectedFile check
                 <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2"><AlertCircle className="h-6 w-6 text-yellow-500" /> Texto Extraído</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <p className="text-muted-foreground">Nenhum texto foi extraído ou o documento não continha texto legível.</p>
+                        <p className="text-muted-foreground">Nenhum texto foi extraído ou o documento não continha texto legível. Verifique o arquivo ou tente um formato diferente.</p>
                     </CardContent>
                 </Card>
             )}
@@ -353,3 +350,4 @@ export default function DocumentAnalysisPage() {
     </div>
   );
 }
+

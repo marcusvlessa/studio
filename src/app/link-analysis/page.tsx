@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { GitFork, Search, RotateCcw, Loader2, FileText, AlertCircle, HelpCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { findEntityRelationships, type FindEntityRelationshipsInput, type FindEntityRelationshipsOutput } from "@/ai/flows/find-entity-relationships";
@@ -16,12 +17,15 @@ import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { LinkAnalysisGraph } from "@/components/link-analysis/LinkAnalysisGraph";
 
+type AnalysisContextType = "Geral" | "Telefonia" | "Financeira" | "Pessoas" | "Digital";
+
 export default function LinkAnalysisPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [relationships, setRelationships] = useState<FindEntityRelationshipsOutput['relationships'] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [processingMessage, setProcessingMessage] = useState("Analisando Vínculos...");
+  const [analysisContext, setAnalysisContext] = useState<AnalysisContextType>("Geral");
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -159,8 +163,8 @@ export default function LinkAnalysisPage() {
       }
       
       setProgress(70);
-      setProcessingMessage("Analisando vínculos com IA...");
-      const input: FindEntityRelationshipsInput = { entities };
+      setProcessingMessage(`Analisando vínculos com IA (Contexto: ${analysisContext})...`);
+      const input: FindEntityRelationshipsInput = { entities, analysisContext };
       const result = await findEntityRelationships(input);
       setRelationships(result.relationships);
       setProgress(100);
@@ -185,6 +189,7 @@ export default function LinkAnalysisPage() {
     setIsLoading(false);
     setProgress(0);
     setProcessingMessage("Analisando Vínculos...");
+    setAnalysisContext("Geral");
     if (fileInputRef.current) {
         fileInputRef.current.value = "";
     }
@@ -218,6 +223,26 @@ export default function LinkAnalysisPage() {
               ref={fileInputRef} 
               disabled={isLoading}
             />
+          </div>
+          <div className="grid w-full max-w-sm items-center gap-1.5">
+            <Label htmlFor="analysis-context">Contexto da Análise</Label>
+            <Select 
+                value={analysisContext} 
+                onValueChange={(value: string) => setAnalysisContext(value as AnalysisContextType)}
+                disabled={isLoading}
+            >
+                <SelectTrigger id="analysis-context" className="w-full">
+                    <SelectValue placeholder="Selecione o contexto..." />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="Geral">Geral</SelectItem>
+                    <SelectItem value="Telefonia">Telefonia (foco em números, ERBs, etc.)</SelectItem>
+                    <SelectItem value="Financeira">Financeira (foco em contas, valores, etc.)</SelectItem>
+                    <SelectItem value="Pessoas">Pessoas e Organizações</SelectItem>
+                    <SelectItem value="Digital">Digital (IPs, Emails, Sites, etc.)</SelectItem>
+                </SelectContent>
+            </Select>
+             <p className="text-xs text-muted-foreground">Opcional: ajuda a IA a focar em tipos de entidades e relações relevantes.</p>
           </div>
            {selectedFile && (
              <p className="text-sm text-muted-foreground flex items-center">
@@ -254,6 +279,7 @@ export default function LinkAnalysisPage() {
             <li>Para arquivos <strong>CSV/TXT</strong>: certifique-se que as entidades estão separadas por linha, vírgula, ponto e vírgula ou tabulação.</li>
             <li>Arquivos <strong>PDF</strong>: o texto será extraído automaticamente para identificar entidades. PDFs baseados em imagem podem não ter bons resultados.</li>
             <li>Arquivos <strong>XLS/XLSX/ANB/ANX</strong>: A extração automática é complexa. Para melhores resultados, converta os dados relevantes para CSV ou TXT, ou cole o texto diretamente.</li>
+            <li>Selecionar um <strong>Contexto da Análise</strong> pode ajudar a IA a identificar tipos de entidades e relações mais relevantes para seu objetivo.</li>
           </ul>
         </AlertDescription>
       </Alert>
@@ -322,4 +348,3 @@ export default function LinkAnalysisPage() {
     </div>
   );
 }
-

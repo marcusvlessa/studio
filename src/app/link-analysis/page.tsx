@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, type ChangeEvent, useRef } from "react";
@@ -13,6 +14,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { LinkAnalysisGraph } from "@/components/link-analysis/LinkAnalysisGraph";
 
 export default function LinkAnalysisPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -256,11 +258,18 @@ export default function LinkAnalysisPage() {
         </AlertDescription>
       </Alert>
 
-      {relationships && relationships.length > 0 && (
-        <Card>
+      {/* Visual Graph Section */}
+      {relationships && relationships.length > 0 && !isLoading && (
+        <LinkAnalysisGraph relationshipsData={relationships} />
+      )}
+
+
+      {/* Tabular/List View of Relationships - Kept for detailed textual view */}
+      {relationships && relationships.length > 0 && !isLoading && (
+        <Card className="mt-6">
           <CardHeader>
-            <CardTitle>Vínculos Identificados</CardTitle>
-            <CardDescription>Abaixo estão as conexões potenciais encontradas entre as entidades do arquivo.</CardDescription>
+            <CardTitle>Lista de Vínculos Identificados</CardTitle>
+            <CardDescription>Abaixo estão as conexões potenciais encontradas entre as entidades do arquivo em formato de lista.</CardDescription>
           </CardHeader>
           <CardContent>
             <ScrollArea className="h-[400px] rounded-md border p-4 bg-muted/30">
@@ -299,8 +308,10 @@ export default function LinkAnalysisPage() {
           </CardContent>
         </Card>
       )}
+      
+      {/* Message for no relationships found */}
       {relationships && relationships.length === 0 && !isLoading && (
-         <Card>
+         <Card className="mt-6">
             <CardContent className="p-6 flex flex-col items-center justify-center min-h-[200px]">
                 <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
                 <p className="text-muted-foreground text-center">Nenhum vínculo direto encontrado para as entidades fornecidas no arquivo.</p>
@@ -311,3 +322,4 @@ export default function LinkAnalysisPage() {
     </div>
   );
 }
+

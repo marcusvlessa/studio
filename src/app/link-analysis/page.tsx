@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, type ChangeEvent, useRef } from "react";
@@ -33,7 +32,8 @@ export default function LinkAnalysisPage() {
     const file = event.target.files?.[0];
     if (file) {
       const allowedExtensions = [".csv", ".txt", ".pdf", ".xls", ".xlsx", ".anb", ".anx"];
-      const fileExtensionSupported = allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+      // Basic check on client, backend will do more robust handling
+      const fileExtensionSupported = allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext)) || file.type === "application/pdf" || file.type === "text/csv" || file.type === "text/plain";
 
       if (fileExtensionSupported) {
         setSelectedFile(file);
@@ -41,7 +41,7 @@ export default function LinkAnalysisPage() {
         setProgress(0);
         toast({ title: "Arquivo Selecionado", description: file.name });
       } else {
-        toast({ variant: "destructive", title: "Tipo de Arquivo Inválido", description: `Por favor, envie um arquivo com uma das seguintes extensões: ${allowedExtensions.join(", ")}.` });
+        toast({ variant: "destructive", title: "Tipo de Arquivo Inválido", description: `Por favor, envie um arquivo com uma das seguintes extensões: ${allowedExtensions.join(", ")} ou um tipo comum (PDF, CSV, TXT).` });
         setSelectedFile(null);
         if (fileInputRef.current) {
             fileInputRef.current.value = "";
@@ -54,13 +54,10 @@ export default function LinkAnalysisPage() {
     const entities = new Set<string>();
     const lines = text.split(/\r?\n/);
 
-    // Regex patterns - these should generally match the entire cell if it's that type.
-    // Brazilian phone number regex (flexible): (XX) XXXXX-XXXX or (XX) XXXX-XXXX or +55 XX XXXXXXXX etc.
     const phonePattern = /^(?:\+55\s?)?(?:\(?\d{2}\)?\s?)?\d{4,5}-?\d{4}$/;
-    const imeiPattern = /^\d{15}$/; // IMEI is exactly 15 digits
-    const ipPattern = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/; // IPv4
+    const imeiPattern = /^\d{15}$/; 
+    const ipPattern = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/; 
     const emailPattern = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-    // Example for Brazilian vehicle plates (old and Mercosul) - can be refined
     const plateOldPattern = /^[A-Z]{3}-?\d{4}$/i;
     const plateMercosulPattern = /^[A-Z]{3}\d[A-Z]\d{2}$/i;
 
@@ -75,7 +72,6 @@ export default function LinkAnalysisPage() {
       for (const delimiter of potentialDelimiters) {
         if (trimmedLine.includes(delimiter)) {
           const parts = trimmedLine.split(delimiter);
-          // Ensure delimiter actually separates content and isn't just part of a single entity
           if (parts.length > 1 && parts.some(p => p.trim() !== "")) { 
             cells = parts.map(p => p.trim()).filter(p => p !== "");
             break;
@@ -100,18 +96,11 @@ export default function LinkAnalysisPage() {
           entities.add(cell);
           matchedSpecific = true;
         } else if (plateOldPattern.test(cell) || plateMercosulPattern.test(cell)) {
-          entities.add(cell.toUpperCase()); // Store plates in uppercase
+          entities.add(cell.toUpperCase()); 
           matchedSpecific = true;
         }
-        // Add other 'else if' for CPF, CNPJ etc. if you have robust regex for them
-
-        // If no specific pattern matched the cell, consider it a general entity
+        
         if (!matchedSpecific) {
-          // Criteria for a general entity:
-          // - length between 2 and 100 chars
-          // - not purely whitespace or symbols
-          // - not a number that looks like a simple integer (unless context makes it clear)
-          //   (the AI is better at typing generic numbers based on context)
           if (cell.length >= 2 && cell.length < 100 && !/^\W+$/.test(cell) && (isNaN(Number(cell)) || cell.length > 4)) {
             entities.add(cell);
           }
@@ -135,11 +124,27 @@ export default function LinkAnalysisPage() {
     setRelationships(null);
 
     let entities: string[] = [];
+    let extractedTextForParsing = "";
 
     try {
-      if (selectedFile.type === "application/pdf") {
+      // For CSV and TXT, read text directly
+      if (selectedFile.type === "text/csv" || selectedFile.type === "text/plain" || selectedFile.name.toLowerCase().endsWith(".txt") || selectedFile.name.toLowerCase().endsWith(".csv")) {
+        setProgress(20);
+        setProcessingMessage(`Lendo arquivo de texto: ${selectedFile.name}...`);
+        try {
+            extractedTextForParsing = await selectedFile.text();
+        } catch (textReadError) {
+            console.error("Erro ao ler arquivo de texto:", textReadError);
+            toast({ variant: "destructive", title: "Erro ao Ler Arquivo de Texto", description: `Não foi possível ler o conteúdo do arquivo ${selectedFile.name}.` });
+            setIsLoading(false); 
+            setProgress(0);
+            return; 
+        }
+      } else { 
+        // For PDF, XLS, XLSX, ANB, ANX, etc., use fileDataUri and let analyzeDocument flow handle it
         setProgress(10);
-        setProcessingMessage(`Lendo arquivo PDF: ${selectedFile.name}...`);
+        setProcessingMessage(`Preparando arquivo ${selectedFile.name} para extração de texto...`);
+        
         const reader = new FileReader();
         reader.readAsDataURL(selectedFile);
         
@@ -147,129 +152,89 @@ export default function LinkAnalysisPage() {
             reader.onloadend = async (e) => {
                 const fileDataUri = e.target?.result as string;
                 if (!fileDataUri) {
-                    toast({ variant: "destructive", title: "Erro ao Ler PDF", description: "Não foi possível ler o conteúdo do arquivo PDF."});
-                    reject(new Error("Erro ao ler PDF: URI de dados vazia."));
+                    toast({ variant: "destructive", title: "Erro ao Ler Arquivo", description: "Não foi possível ler o conteúdo do arquivo."});
+                    reject(new Error("Erro ao ler arquivo: URI de dados vazia."));
                     return;
                 }
                 setProgress(30);
-                setProcessingMessage("Extraindo texto do PDF com IA (pode levar um momento)...");
+                setProcessingMessage("Extraindo texto do arquivo com IA (pode levar um momento)...");
                 try {
                     const docInput: AnalyzeDocumentInput = { fileDataUri, fileName: selectedFile.name };
-                    // Use the more comprehensive document analysis flow to get text
                     const docResult = await analyzeDocument(docInput); 
-                    setProgress(60);
-                    setProcessingMessage("Processando texto extraído do PDF...");
+                    
                     if (docResult.extractedText && docResult.extractedText.length > 0) {
-                        entities = parseEntitiesFromText(docResult.extractedText);
+                        // If extractedText is a system warning, it means content wasn't really extracted for entity parsing.
+                        // However, parseEntitiesFromText will just get the warning itself, which is fine.
+                        // The AI for relationships will then see this warning as an "entity".
+                        extractedTextForParsing = docResult.extractedText;
+                         if (!docResult.extractedText.startsWith("AVISO DO SISTEMA:")) {
+                           toast({ title: "Extração de Texto", description: `Texto extraído de ${selectedFile.name} para análise de entidades.` });
+                         } else {
+                           toast({ variant: "default", title: "Extração de Texto Limitada", description: `Conteúdo de ${selectedFile.name} não pôde ser lido diretamente. Análise de vínculos será baseada em metadados.` });
+                         }
                     } else {
-                        toast({ variant: "default", title: "Extração de Texto", description: "Não foi possível extrair texto do PDF ou o PDF não contém texto." });
+                        toast({ variant: "default", title: "Extração de Texto", description: `Não foi possível extrair texto de ${selectedFile.name} ou o arquivo não contém texto.` });
                     }
                     resolve();
-                } catch (pdfError) {
-                    console.error("Erro na extração de texto do PDF:", pdfError);
-                    toast({ variant: "destructive", title: "Erro na Análise do PDF", description: pdfError instanceof Error ? pdfError.message : "Falha ao analisar o PDF com IA." });
-                    reject(pdfError);
+                } catch (extractionError) {
+                    console.error("Erro na extração de texto:", extractionError);
+                    toast({ variant: "destructive", title: "Erro na Extração de Texto", description: extractionError instanceof Error ? extractionError.message : "Falha ao extrair texto do arquivo com IA." });
+                    reject(extractionError);
                 }
             };
-            reader.onerror = (errorEvent) => { // errorEvent is a ProgressEvent
-                 toast({ variant: "destructive", title: "Erro ao Ler PDF", description: "Ocorreu um erro ao tentar ler o arquivo PDF."});
-                 reject(new Error(`Erro no leitor de PDF ao processar ${selectedFile.name}. Detalhes: ${errorEvent.type}`));
-            }
-        });
-
-      } else if (selectedFile.type === "text/csv" || selectedFile.type === "text/plain" || selectedFile.name.toLowerCase().endsWith(".txt") || selectedFile.name.toLowerCase().endsWith(".csv")) {
-        setProgress(20);
-        setProcessingMessage(`Lendo arquivo de texto: ${selectedFile.name}...`);
-        try {
-            const fileText = await selectedFile.text();
-            setProgress(50);
-            setProcessingMessage("Extraindo entidades do texto...");
-            entities = parseEntitiesFromText(fileText);
-        } catch (textReadError) {
-            console.error("Erro ao ler arquivo de texto:", textReadError);
-            toast({ variant: "destructive", title: "Erro ao Ler Arquivo de Texto", description: `Não foi possível ler o conteúdo do arquivo ${selectedFile.name}. Verifique se é um arquivo de texto válido e tente novamente.` });
-            setIsLoading(false); // Ensure loading state is reset
-            setProgress(0);
-            return; // Exit if text file cannot be read
-        }
-      } else {
-        // For XLS, XLSX, ANB, ANX - show warning, attempt text extraction (might fail or be garbage)
-        toast({ 
-            variant: "default", 
-            title: "Formato de Arquivo Complexo", 
-            description: `Para ${selectedFile.name}, a extração automática de entidades é limitada. Tentaremos uma extração de texto básica. Para melhores resultados, converta para CSV/TXT ou cole o conteúdo relevante.`,
-            duration: 8000,
-        });
-        setProgress(20);
-        setProcessingMessage(`Tentando ler arquivo: ${selectedFile.name}...`);
-        const reader = new FileReader(); // New reader for complex files
-        reader.readAsDataURL(selectedFile);
-
-        await new Promise<void>((resolve, reject) => {
-             reader.onloadend = async (e) => {
-                const fileDataUri = e.target?.result as string;
-                if (!fileDataUri) {
-                    toast({variant: "destructive", title: "Erro ao Ler Arquivo Complexo", description: "Não foi possível ler o conteúdo do arquivo complexo."});
-                    reject(new Error("Erro ao ler arquivo complexo: URI de dados vazia."));
-                    return;
-                }
-                setProgress(40);
-                setProcessingMessage("Tentando extração de texto genérica com IA...");
-                try {
-                    const docInput: AnalyzeDocumentInput = { fileDataUri, fileName: selectedFile.name };
-                    const docResult = await analyzeDocument(docInput);
-                    if (docResult.extractedText && docResult.extractedText.length > 0) {
-                        entities = parseEntitiesFromText(docResult.extractedText);
-                    } else {
-                         toast({ variant: "default", title: "Extração de Texto", description: "Não foi possível extrair texto relevante do arquivo complexo." });
-                    }
-                    resolve();
-                } catch (complexError) {
-                    console.error("Erro na extração de texto de arquivo complexo:", complexError);
-                    toast({ variant: "destructive", title: "Erro na Análise do Arquivo Complexo", description: complexError instanceof Error ? complexError.message : "Falha ao analisar o arquivo complexo com IA." });
-                    reject(complexError);
-                }
-            };
-            reader.onerror = (errorEvent) => {
-                 toast({ variant: "destructive", title: "Erro ao Ler Arquivo Complexo", description: "Ocorreu um erro ao tentar ler o arquivo complexo."});
-                 reject(new Error(`Erro no leitor de arquivo complexo ao processar ${selectedFile.name}. Detalhes: ${errorEvent.type}`));
+            reader.onerror = (errorEvent) => { 
+                 toast({ variant: "destructive", title: "Erro ao Ler Arquivo", description: "Ocorreu um erro ao tentar ler o arquivo."});
+                 reject(new Error(`Erro no leitor de arquivo ao processar ${selectedFile.name}. Detalhes: ${errorEvent.type}`));
             }
         });
       }
 
-      if (entities.length === 0 && !isLoading) { // Check isLoading to prevent toast if an error already set it to false.
-        toast({ variant: "default", title: "Nenhuma Entidade Encontrada", description: "O arquivo não contém entidades que puderam ser extraídas automaticamente ou está mal formatado." });
-        setIsLoading(false);
-        setProgress(0);
-        return;
+      // Common entity parsing and relationship finding logic
+      if (extractedTextForParsing) {
+        setProgress(50);
+        setProcessingMessage("Extraindo entidades do texto processado...");
+        entities = parseEntitiesFromText(extractedTextForParsing);
       }
       
-      if (entities.length > 0) { // Only proceed if entities were found
-        setProgress(70);
-        setProcessingMessage(`Analisando ${entities.length} entidades com IA (Contexto: ${analysisContext})...`);
-        const input: FindEntityRelationshipsInput = { entities, analysisContext };
-        const result = await findEntityRelationships(input);
-        setRelationships(result.relationships);
-        setProgress(100);
-
-        if (result.relationships && result.relationships.length > 0) {
-          toast({ title: "Análise de Vínculos Concluída", description: `Foram encontrados ${result.relationships.length} vínculos potenciais.` });
-        } else {
-          toast({ title: "Análise de Vínculos Concluída", description: "Nenhum vínculo direto foi encontrado para as entidades fornecidas." });
+      if (entities.length === 0) {
+        // This can happen if text extraction yielded nothing, or parsing yielded nothing.
+        // The toast about extraction failure would have already been shown.
+        // If it was a system warning, entities array might contain that warning text.
+        if (!extractedTextForParsing.startsWith("AVISO DO SISTEMA:")) { // Avoid double toasting for system warnings.
+          toast({ variant: "default", title: "Nenhuma Entidade Encontrada", description: "O arquivo não contém entidades que puderam ser extraídas automaticamente ou o texto extraído estava vazio." });
         }
-      } else if (isLoading) { // If no entities but still loading (e.g. PDF/Complex path did not populate entities but didn't error out before this check)
-        toast({ variant: "default", title: "Nenhuma Entidade Para Analisar", description: "Não foram extraídas entidades do arquivo para realizar a análise de vínculos." });
+        // If entities is truly empty (not even a system warning), and we are here, it means no data to process.
+        if(entities.length === 0) {
+            setIsLoading(false);
+            setProgress(0);
+            return;
+        }
+      }
+      
+      // Even if entities contains just a system warning, send it to the relationship finder.
+      // The AI might still be able to provide some context based on the file name/type mentioned in the warning.
+      setProgress(70);
+      setProcessingMessage(`Analisando ${entities.length} strings/entidades com IA (Contexto: ${analysisContext})...`);
+      const input: FindEntityRelationshipsInput = { entities, analysisContext };
+      const result = await findEntityRelationships(input);
+      setRelationships(result.relationships);
+      setProgress(100);
+
+      if (result.relationships && result.relationships.length > 0) {
+        toast({ title: "Análise de Vínculos Concluída", description: `Foram encontrados ${result.relationships.length} vínculos potenciais.` });
+      } else {
+        toast({ title: "Análise de Vínculos Concluída", description: "Nenhum vínculo direto foi encontrado para as entidades/strings fornecidas." });
       }
 
-    } catch (error) { // This outer catch handles errors from promise rejections (e.g., from FileReader or analyzeDocument)
+    } catch (error) { 
       console.error("Erro na análise de vínculos:", error);
-      // The specific toast for the error (e.g. PDF read error, AI error) should have already been shown.
-      // This is a fallback.
-      if (!(error instanceof Error && (error.message.includes("Erro ao ler PDF") || error.message.includes("Falha ao analisar o PDF") || error.message.includes("Erro ao ler arquivo complexo") || error.message.includes("Falha ao analisar o arquivo complexo")))) {
-        toast({ variant: "destructive", title: "Falha Geral na Análise", description: error instanceof Error ? error.message : "Ocorreu um erro desconhecido ao processar o arquivo ou analisar os vínculos." });
+      // Avoid generic toast if a more specific one was already shown (e.g., during file read/extraction)
+      const errorMessagesToIgnore = ["Erro ao ler arquivo:", "Falha ao extrair texto", "URI de dados vazia"];
+      if (!(error instanceof Error && errorMessagesToIgnore.some(msg => error.message.includes(msg)))) {
+        toast({ variant: "destructive", title: "Falha Geral na Análise", description: error instanceof Error ? error.message : "Ocorreu um erro desconhecido." });
       }
     } finally {
-      setIsLoading(false); // This will always run
+      setIsLoading(false); 
     }
   };
 
@@ -298,8 +263,7 @@ export default function LinkAnalysisPage() {
           <CardTitle>Enviar Arquivo de Entidades</CardTitle>
           <CardDescription>
             Forneça um arquivo contendo as entidades (ex: nomes, telefones, empresas, locais) para analisar suas conexões.
-            Para arquivos PDF, o texto será extraído. Para CSV/TXT, as entidades serão extraídas por linha ou delimitadores comuns.
-            Formatos como XLS, XLSX, ANB, ANX têm suporte limitado para extração automática.
+            Para arquivos PDF e outros formatos complexos (XLS, XLSX, etc.), o texto será extraído pela IA. Para CSV/TXT, as entidades serão extraídas por linha ou delimitadores comuns.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -308,7 +272,7 @@ export default function LinkAnalysisPage() {
             <Input 
               id="entities-file-upload" 
               type="file" 
-              accept=".csv,.txt,.pdf,.xls,.xlsx,.anb,.anx,text/csv,text/plain,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" 
+              accept=".csv,.txt,.pdf,.xls,.xlsx,.anb,.anx,text/csv,text/plain,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/octet-stream" 
               onChange={handleFileChange} 
               ref={fileInputRef} 
               disabled={isLoading}
@@ -366,21 +330,17 @@ export default function LinkAnalysisPage() {
         <AlertTitle>Dicas para Melhor Análise</AlertTitle>
         <AlertDescription>
           <ul className="list-disc list-inside text-xs">
-            <li>Para arquivos <strong>CSV/TXT</strong>: certifique-se que as entidades estão separadas por linha, vírgula, ponto e vírgula ou tabulação. A IA tentará identificar as entidades individualmente.</li>
-            <li>Arquivos <strong>PDF</strong>: o texto será extraído automaticamente para identificar entidades. PDFs baseados em imagem podem não ter bons resultados.</li>
-            <li>Arquivos <strong>XLS/XLSX/ANB/ANX</strong>: A extração automática é complexa. Para melhores resultados, converta os dados relevantes para CSV ou TXT, ou cole o texto diretamente.</li>
-            <li>Selecionar um <strong>Contexto da Análise</strong> pode ajudar a IA a identificar tipos de entidades e relações mais relevantes para seu objetivo.</li>
+            <li>Para arquivos <strong>CSV/TXT</strong>: certifique-se que as entidades estão separadas por linha, vírgula, ponto e vírgula ou tabulação.</li>
+            <li>Arquivos <strong>PDF, XLS, XLSX, ANB, ANX</strong>: o texto será extraído automaticamente pela IA para identificar entidades. A qualidade da extração pode variar.</li>
+            <li>Selecionar um <strong>Contexto da Análise</strong> pode ajudar a IA a identificar tipos de entidades e relações mais relevantes.</li>
           </ul>
         </AlertDescription>
       </Alert>
 
-      {/* Visual Graph Section */}
       {relationships && relationships.length > 0 && !isLoading && (
         <LinkAnalysisGraph relationshipsData={relationships} />
       )}
 
-
-      {/* Tabular/List View of Relationships - Kept for detailed textual view */}
       {relationships && relationships.length > 0 && !isLoading && (
         <Card className="mt-6">
           <CardHeader>
@@ -425,7 +385,6 @@ export default function LinkAnalysisPage() {
         </Card>
       )}
       
-      {/* Message for no relationships found */}
       {relationships && relationships.length === 0 && !isLoading && (
          <Card className="mt-6">
             <CardContent className="p-6 flex flex-col items-center justify-center min-h-[200px]">
@@ -438,4 +397,3 @@ export default function LinkAnalysisPage() {
     </div>
   );
 }
-

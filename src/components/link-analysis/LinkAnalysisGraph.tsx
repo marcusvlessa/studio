@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { Edge, Node, NodeProps } from "reactflow";
@@ -96,22 +97,22 @@ export function LinkAnalysisGraph({ relationshipsData }: LinkAnalysisGraphProps)
       }
 
       generatedEdges.push({
-        id: `e-${rel.entity1}-${rel.entity2}-${index}`,
+        id: `e-${rel.entity1}-${rel.entity2}-${index}`, // Ensure unique edge IDs
         source: rel.entity1,
         target: rel.entity2,
-        label: rel.relationship, // Simplified label
-        type: 'smoothstep', // Using smoothstep for better curve handling
+        label: rel.relationship,
+        // type: 'smoothstep', // Using default Bezier edges for broader compatibility
         style: {
-          strokeWidth: 1.5, // Consistent stroke width
-          stroke: 'hsl(var(--primary))', // Consistent stroke color
+          strokeWidth: 2, 
+          stroke: 'hsl(var(--primary))', 
         },
         markerEnd: {
             type: MarkerType.ArrowClosed,
-            width: 15, // Adjusted size
-            height: 15, // Adjusted size
+            width: 20, 
+            height: 20, 
             color: 'hsl(var(--primary))',
         },
-        data: { // Keep data for potential future use or tooltips
+        data: { 
             relationship: rel.relationship,
             strength: rel.strength
         }
@@ -120,14 +121,22 @@ export function LinkAnalysisGraph({ relationshipsData }: LinkAnalysisGraphProps)
     
     const nodesArray = Array.from(uniqueEntities.values());
     const numNodes = nodesArray.length;
-    const nodesPerRow = Math.max(1, Math.ceil(Math.sqrt(numNodes)));
-    const xSpacing = 250; 
-    const ySpacing = 150; 
+    
+    // Simple circular layout
+    const radius = numNodes > 1 ? Math.max(150, numNodes * 40) : 0; // Adjust radius based on node count
+    const centerX = 0; 
+    const centerY = 0; 
 
     nodesArray.forEach((node, index) => {
-      const row = Math.floor(index / nodesPerRow);
-      const col = index % nodesPerRow;
-      node.position = { x: col * xSpacing, y: row * ySpacing };
+      if (numNodes === 1) {
+        node.position = { x: centerX, y: centerY };
+      } else {
+        const angle = (index / numNodes) * 2 * Math.PI;
+        node.position = {
+          x: centerX + radius * Math.cos(angle),
+          y: centerY + radius * Math.sin(angle),
+        };
+      }
     });
     
     return { initialNodes: nodesArray, initialEdges: generatedEdges };

@@ -54,30 +54,74 @@ export default function LinkAnalysisPage() {
     const entities = new Set<string>();
     const lines = text.split(/\r?\n/);
 
-    lines.forEach(line => {
-        // First, try to split by common delimiters to get individual values from table-like rows
-        const potentialDelimiters = [',', ';', '\t'];
-        let cells: string[] = [line]; // Start with the line itself
+    // Regex patterns - these should generally match the entire cell if it's that type.
+    // Brazilian phone number regex (flexible): (XX) XXXXX-XXXX or (XX) XXXX-XXXX or +55 XX XXXXXXXX etc.
+    const phonePattern = /^(?:\+55\s?)?(?:\(?\d{2}\)?\s?)?\d{4,5}-?\d{4}$/;
+    const imeiPattern = /^\d{15}$/; // IMEI is exactly 15 digits
+    const ipPattern = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/; // IPv4
+    const emailPattern = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    // Example for Brazilian vehicle plates (old and Mercosul) - can be refined
+    const plateOldPattern = /^[A-Z]{3}-?\d{4}$/i;
+    const plateMercosulPattern = /^[A-Z]{3}\d[A-Z]\d{2}$/i;
 
-        for (const delimiter of potentialDelimiters) {
-            if (line.includes(delimiter)) {
-                cells = line.split(delimiter);
-                break; // Found a delimiter, assume this is the primary one for this line
-            }
+
+    lines.forEach(line => {
+      const trimmedLine = line.trim();
+      if (!trimmedLine) return;
+
+      const potentialDelimiters = [',', ';', '\t', '|'];
+      let cells: string[] = [trimmedLine]; 
+
+      for (const delimiter of potentialDelimiters) {
+        if (trimmedLine.includes(delimiter)) {
+          const parts = trimmedLine.split(delimiter);
+          // Ensure delimiter actually separates content and isn't just part of a single entity
+          if (parts.length > 1 && parts.some(p => p.trim() !== "")) { 
+            cells = parts.map(p => p.trim()).filter(p => p !== "");
+            break;
+          }
         }
-        
-        cells.forEach(cell => {
-            const trimmedCell = cell.trim();
-            // Add more specific filters if needed (e.g., regex for phone numbers, IMEIs)
-            // For now, basic length and content check
-            if (trimmedCell && trimmedCell.length > 1 && trimmedCell.length < 200) { 
-                entities.add(trimmedCell);
-            }
-        });
+      }
+
+      cells.forEach(cell => {
+        if (!cell) return;
+
+        let matchedSpecific = false;
+        if (phonePattern.test(cell)) {
+          entities.add(cell);
+          matchedSpecific = true;
+        } else if (imeiPattern.test(cell)) {
+          entities.add(cell);
+          matchedSpecific = true;
+        } else if (ipPattern.test(cell)) {
+          entities.add(cell);
+          matchedSpecific = true;
+        } else if (emailPattern.test(cell)) {
+          entities.add(cell);
+          matchedSpecific = true;
+        } else if (plateOldPattern.test(cell) || plateMercosulPattern.test(cell)) {
+          entities.add(cell.toUpperCase()); // Store plates in uppercase
+          matchedSpecific = true;
+        }
+        // Add other 'else if' for CPF, CNPJ etc. if you have robust regex for them
+
+        // If no specific pattern matched the cell, consider it a general entity
+        if (!matchedSpecific) {
+          // Criteria for a general entity:
+          // - length between 2 and 100 chars
+          // - not purely whitespace or symbols
+          // - not a number that looks like a simple integer (unless context makes it clear)
+          //   (the AI is better at typing generic numbers based on context)
+          if (cell.length >= 2 && cell.length < 100 && !/^\W+$/.test(cell) && (isNaN(Number(cell)) || cell.length > 4)) {
+            entities.add(cell);
+          }
+        }
+      });
     });
     
-    return Array.from(entities).filter(e => e.length > 0);
+    return Array.from(entities);
   };
+
 
   const handleAnalyze = async () => {
     if (!selectedFile) {
@@ -95,7 +139,7 @@ export default function LinkAnalysisPage() {
     try {
       if (selectedFile.type === "application/pdf") {
         setProgress(10);
-        setProcessingMessage("Lendo arquivo PDF...");
+        setProcessingMessage(`Lendo arquivo PDF: ${selectedFile.name}...`);
         const reader = new FileReader();
         reader.readAsDataURL(selectedFile);
         
@@ -108,31 +152,34 @@ export default function LinkAnalysisPage() {
                     return;
                 }
                 setProgress(30);
-                setProcessingMessage("Extraindo texto do PDF com IA...");
+                setProcessingMessage("Extraindo texto do PDF com IA (pode levar um momento)...");
                 try {
                     const docInput: AnalyzeDocumentInput = { fileDataUri, fileName: selectedFile.name };
-                    const docResult = await analyzeDocument(docInput);
+                    // Use the more comprehensive document analysis flow to get text
+                    const docResult = await analyzeDocument(docInput); 
                     setProgress(60);
-                    setProcessingMessage("Processando texto extraído...");
-                    if (docResult.extractedText) {
+                    setProcessingMessage("Processando texto extraído do PDF...");
+                    if (docResult.extractedText && docResult.extractedText.length > 0) {
                         entities = parseEntitiesFromText(docResult.extractedText);
                     } else {
-                        toast({ variant: "destructive", title: "Extração de Texto Falhou", description: "Não foi possível extrair texto do PDF." });
+                        toast({ variant: "default", title: "Extração de Texto", description: "Não foi possível extrair texto do PDF ou o PDF não contém texto." });
                     }
                     resolve();
                 } catch (pdfError) {
+                    console.error("Erro na extração de texto do PDF:", pdfError);
+                    toast({ variant: "destructive", title: "Erro na Análise do PDF", description: pdfError instanceof Error ? pdfError.message : "Falha ao analisar o PDF com IA." });
                     reject(pdfError);
                 }
             };
-            reader.onerror = () => {
+            reader.onerror = (error) => {
                  toast({ variant: "destructive", title: "Erro ao Ler PDF", description: "Ocorreu um erro ao tentar ler o arquivo PDF."});
-                 reject(new Error("Erro no reader do PDF."));
+                 reject(new Error(`Erro no reader do PDF: ${error}`));
             }
         });
 
       } else if (selectedFile.type === "text/csv" || selectedFile.type === "text/plain" || selectedFile.name.toLowerCase().endsWith(".txt") || selectedFile.name.toLowerCase().endsWith(".csv")) {
         setProgress(20);
-        setProcessingMessage("Lendo arquivo de texto...");
+        setProcessingMessage(`Lendo arquivo de texto: ${selectedFile.name}...`);
         const fileText = await selectedFile.text();
         setProgress(50);
         setProcessingMessage("Extraindo entidades do texto...");
@@ -142,16 +189,41 @@ export default function LinkAnalysisPage() {
         toast({ 
             variant: "default", 
             title: "Formato de Arquivo Complexo", 
-            description: "Para arquivos como XLS, XLSX, ANB, ANX, a extração automática de entidades é limitada. Tentaremos uma extração de texto básica. Para melhores resultados, converta para CSV/TXT ou cole o conteúdo relevante.",
+            description: `Para ${selectedFile.name}, a extração automática de entidades é limitada. Tentaremos uma extração de texto básica. Para melhores resultados, converta para CSV/TXT ou cole o conteúdo relevante.`,
             duration: 8000,
         });
         setProgress(20);
-        setProcessingMessage("Tentando ler arquivo complexo...");
+        setProcessingMessage(`Tentando ler arquivo: ${selectedFile.name}...`);
         try {
-            const fileText = await selectedFile.text(); // This will likely be garbled for binary files
-            setProgress(50);
-            setProcessingMessage("Extraindo entidades (pode ser limitado)...");
-            entities = parseEntitiesFromText(fileText);
+            // Attempt to use analyzeDocument for complex types if it can handle them (e.g. if it is image based)
+            // This is a placeholder; Genkit's media handling primarily works well with standard text/image/audio.
+            // For structured binary like XLS, true parsing needs a library.
+            const reader = new FileReader();
+            reader.readAsDataURL(selectedFile);
+            await new Promise<void>((resolve, reject) => {
+                 reader.onloadend = async (e) => {
+                    const fileDataUri = e.target?.result as string;
+                    if (!fileDataUri) {
+                        reject(new Error("Não foi possível ler arquivo complexo."));
+                        return;
+                    }
+                    setProgress(40);
+                    setProcessingMessage("Tentando extração de texto genérica com IA...");
+                    try {
+                        const docInput: AnalyzeDocumentInput = { fileDataUri, fileName: selectedFile.name };
+                        const docResult = await analyzeDocument(docInput);
+                        if (docResult.extractedText && docResult.extractedText.length > 0) {
+                            entities = parseEntitiesFromText(docResult.extractedText);
+                        } else {
+                             toast({ variant: "default", title: "Extração de Texto", description: "Não foi possível extrair texto relevante do arquivo complexo." });
+                        }
+                        resolve();
+                    } catch (complexError) {
+                        reject(complexError);
+                    }
+                };
+                reader.onerror = reject;
+            });
         } catch (readError) {
             toast({ variant: "destructive", title: "Erro ao Ler Arquivo Complexo", description: "Não foi possível ler o conteúdo. Considere converter para TXT/CSV." });
             setIsLoading(false);
@@ -161,21 +233,21 @@ export default function LinkAnalysisPage() {
       }
 
       if (entities.length === 0) {
-        toast({ variant: "destructive", title: "Nenhuma Entidade Encontrada", description: "O arquivo não contém entidades válidas ou está mal formatado para extração automática." });
+        toast({ variant: "default", title: "Nenhuma Entidade Encontrada", description: "O arquivo não contém entidades que puderam ser extraídas automaticamente ou está mal formatado." });
         setIsLoading(false);
         setProgress(0);
         return;
       }
       
       setProgress(70);
-      setProcessingMessage(`Analisando vínculos com IA (Contexto: ${analysisContext})...`);
+      setProcessingMessage(`Analisando ${entities.length} entidades com IA (Contexto: ${analysisContext})...`);
       const input: FindEntityRelationshipsInput = { entities, analysisContext };
       const result = await findEntityRelationships(input);
       setRelationships(result.relationships);
       setProgress(100);
 
       if (result.relationships && result.relationships.length > 0) {
-        toast({ title: "Análise de Vínculos Concluída", description: "Foram encontrados vínculos potenciais entre as entidades." });
+        toast({ title: "Análise de Vínculos Concluída", description: `Foram encontrados ${result.relationships.length} vínculos potenciais.` });
       } else {
         toast({ title: "Análise de Vínculos Concluída", description: "Nenhum vínculo direto foi encontrado para as entidades fornecidas." });
       }

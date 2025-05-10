@@ -1,4 +1,3 @@
-
 "use client";
 
 import type { Edge, Node, NodeProps } from "reactflow";
@@ -25,7 +24,6 @@ interface CustomNodeData {
 
 
 const CustomNodeComponent = ({ data }: NodeProps<CustomNodeData>) => {
-  // Basic styling, can be expanded
   const nodeStyle: React.CSSProperties = {
     padding: '10px 15px',
     borderRadius: '8px',
@@ -85,7 +83,7 @@ export function LinkAnalysisGraph({ relationshipsData }: LinkAnalysisGraphProps)
           id: rel.entity1,
           type: 'custom',
           data: { label: rel.entity1, type: rel.entity1Type || "Desconhecido" },
-          position: { x: 0, y: 0 }, // Placeholder, will be set below
+          position: { x: 0, y: 0 }, 
         });
       }
       if (!uniqueEntities.has(rel.entity2)) {
@@ -93,7 +91,7 @@ export function LinkAnalysisGraph({ relationshipsData }: LinkAnalysisGraphProps)
           id: rel.entity2,
           type: 'custom',
           data: { label: rel.entity2, type: rel.entity2Type || "Desconhecido" },
-          position: { x: 0, y: 0 }, // Placeholder
+          position: { x: 0, y: 0 }, 
         });
       }
 
@@ -101,36 +99,30 @@ export function LinkAnalysisGraph({ relationshipsData }: LinkAnalysisGraphProps)
         id: `e-${rel.entity1}-${rel.entity2}-${index}`,
         source: rel.entity1,
         target: rel.entity2,
-        label: rel.relationship + (rel.strength ? ` (${(rel.strength * 100).toFixed(0)}%)` : ''),
-        type: 'smoothstep',
-        animated: rel.strength && rel.strength > 0.7,
+        label: rel.relationship, // Simplified label
+        type: 'smoothstep', // Using smoothstep for better curve handling
+        style: {
+          strokeWidth: 1.5, // Consistent stroke width
+          stroke: 'hsl(var(--primary))', // Consistent stroke color
+        },
         markerEnd: {
             type: MarkerType.ArrowClosed,
-            width: 20,
-            height: 20,
+            width: 15, // Adjusted size
+            height: 15, // Adjusted size
             color: 'hsl(var(--primary))',
         },
-        style: {
-          strokeWidth: rel.strength ? Math.max(1, rel.strength * 3) : 1.5,
-          stroke: rel.strength && rel.strength < 0.3 ? 'hsl(var(--muted-foreground))' : 'hsl(var(--primary))',
-        },
-        labelStyle: { fill: 'hsl(var(--foreground))', fontWeight: 500, fontSize: '10px' },
-        labelBgStyle: { fill: 'hsl(var(--background))', fillOpacity: 0.7 },
-        labelBgPadding: [4, 2],
-        labelBgBorderRadius: 2,
-        data: {
+        data: { // Keep data for potential future use or tooltips
             relationship: rel.relationship,
             strength: rel.strength
         }
       });
     });
     
-    // Basic grid layout for nodes
     const nodesArray = Array.from(uniqueEntities.values());
     const numNodes = nodesArray.length;
     const nodesPerRow = Math.max(1, Math.ceil(Math.sqrt(numNodes)));
-    const xSpacing = 250; // Horizontal spacing between nodes
-    const ySpacing = 150; // Vertical spacing between nodes
+    const xSpacing = 250; 
+    const ySpacing = 150; 
 
     nodesArray.forEach((node, index) => {
       const row = Math.floor(index / nodesPerRow);
@@ -147,7 +139,7 @@ export function LinkAnalysisGraph({ relationshipsData }: LinkAnalysisGraphProps)
   }, [initialNodes, initialEdges, setNodes, setEdges]);
   
   if (!relationshipsData || relationshipsData.length === 0) {
-    return null; // Don't render anything if no data
+    return null; 
   }
 
   return (
@@ -169,7 +161,7 @@ export function LinkAnalysisGraph({ relationshipsData }: LinkAnalysisGraphProps)
                     nodesConnectable={false} 
                     elementsSelectable
                     attributionPosition="bottom-right"
-                    proOptions={{ hideAttribution: true }} // Hides "React Flow" attribution if you have a pro license
+                    proOptions={{ hideAttribution: true }} 
                 >
                     <Controls showInteractive={false} />
                     <MiniMap nodeStrokeWidth={3} zoomable pannable nodeColor={(n) => {

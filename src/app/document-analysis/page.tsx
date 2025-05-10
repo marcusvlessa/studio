@@ -7,11 +7,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { FileUp, RotateCcw, Search, Loader2, FileTextIcon, CheckCircle, AlertCircle, Info } from "lucide-react";
+import { FileUp, RotateCcw, Search, Loader2, FileTextIcon, CheckCircle, AlertCircle, Info, UserCheck, UserEdit, UserTie, ListChecks, AlertTriangle, BookOpen, Scale } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { analyzeDocument, type AnalyzeDocumentInput, type AnalyzeDocumentOutput } from "@/ai/flows/analyze-document-flow";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 export default function DocumentAnalysisPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -25,12 +26,11 @@ export default function DocumentAnalysisPage() {
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      // Updated to allow more document types, aligning with typical GenAI capabilities
       const allowedTypes = [
         "application/pdf", 
-        "application/msword", // .doc
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
-        "text/plain", // .txt
+        "application/msword", 
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document", 
+        "text/plain", 
         "image/png", 
         "image/jpeg",
         "image/gif",
@@ -79,24 +79,26 @@ export default function DocumentAnalysisPage() {
       if (currentProgress <= 30) { 
         setProgress(currentProgress);
       } else {
-        clearInterval(progressInterval);
+        // Hold progress at 30% until actual processing starts to give a sense of activity
+        // It will jump to 50% once file reading is done, then to 100% on result.
+        // The main processing time is the AI call.
       }
-    }, 100);
+    }, 200); // Slower interval for initial progress
 
     try {
       const reader = new FileReader();
       reader.readAsDataURL(selectedFile);
       reader.onloadend = async (e) => {
+        clearInterval(progressInterval); // Clear previous interval
         const fileDataUri = e.target?.result as string;
         if (!fileDataUri) {
           toast({ variant: "destructive", title: "Erro ao Ler Arquivo", description: "Não foi possível ler o conteúdo do arquivo."});
           setIsLoading(false);
-          clearInterval(progressInterval);
           setProgress(0);
           return;
         }
         
-        setProgress(50); 
+        setProgress(50); // File read, AI call starting
 
         const input: AnalyzeDocumentInput = { 
             fileDataUri,
@@ -108,15 +110,21 @@ export default function DocumentAnalysisPage() {
         toast({ title: "Análise Concluída", description: "Documento processado com sucesso." });
       };
       reader.onerror = () => {
+        clearInterval(progressInterval);
         throw new Error("Erro ao ler o arquivo.");
       }
     } catch (error) {
+      clearInterval(progressInterval);
       console.error("Erro na análise do documento:", error);
       toast({ variant: "destructive", title: "Falha na Análise", description: error instanceof Error ? error.message : "Ocorreu um erro desconhecido." });
       setProgress(0);
     } finally {
-      clearInterval(progressInterval);
-      setIsLoading(false);
+      // setIsLoading will be set to false when onloadend completes (success or error handling within it)
+      // or if an error occurs before onloadend.
+      // To ensure isLoading is false if an early error happens in the try block:
+      if (isLoading && !analysisResult && progress !== 100) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -135,14 +143,14 @@ export default function DocumentAnalysisPage() {
   return (
     <div className="flex flex-col gap-6">
       <header className="mb-4">
-        <h1 className="text-3xl font-bold tracking-tight">Módulo de Análise de Documentos</h1>
-        <p className="text-muted-foreground">Envie e processe arquivos PDF, Word, TXT ou imagens para análise.</p>
+        <h1 className="text-3xl font-bold tracking-tight">Módulo de Análise de Documentos Investigativa</h1>
+        <p className="text-muted-foreground">Envie documentos (PDF, Word, TXT, Imagens) para uma análise multifacetada por IA, simulando papéis de Investigador, Escrivão e Delegado.</p>
       </header>
 
       <Card>
         <CardHeader>
-          <CardTitle>Enviar Documento</CardTitle>
-          <CardDescription>Selecione um arquivo (PDF, DOCX, TXT, PNG, JPG) para iniciar a análise. OCR será aplicado a imagens.</CardDescription>
+          <CardTitle>Enviar Documento para Análise Profunda</CardTitle>
+          <CardDescription>Selecione um arquivo para extração de texto (OCR para imagens), resumo, identificação de entidades e uma análise investigativa completa.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid w-full max-w-sm items-center gap-1.5">
@@ -153,6 +161,7 @@ export default function DocumentAnalysisPage() {
                 ref={fileInputRef}
                 accept=".pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,image/png,image/jpeg,image/gif,image/webp" 
                 onChange={handleFileChange} 
+                disabled={isLoading}
             />
           </div>
           {selectedFile && (
@@ -160,7 +169,7 @@ export default function DocumentAnalysisPage() {
                 <FileTextIcon className="h-5 w-5" />
                 <div>
                     <p className="font-semibold">{selectedFile.name}</p>
-                    <p>({ (selectedFile.size / 1024).toFixed(2) } KB) - Tipo: {selectedFile.type || "Desconhecido"}</p>
+                    <p>({ (selectedFile.size / (1024*1024)).toFixed(2) } MB) - Tipo: {selectedFile.type || "Desconhecido"}</p>
                 </div>
             </div>
           )}
@@ -168,21 +177,27 @@ export default function DocumentAnalysisPage() {
             <div>
               <Label>Pré-visualização da Imagem:</Label>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={filePreview} alt="Preview" className="mt-2 max-h-60 w-auto rounded border" />
+              <img src={filePreview} alt="Preview" className="mt-2 max-h-60 w-auto rounded border object-contain" />
             </div>
           )}
           {isLoading && (
             <div className="space-y-2">
               <Label>Progresso da Análise:</Label>
               <Progress value={progress} className="w-full" />
-              <p className="text-sm text-muted-foreground text-center">{progress}% {progress < 100 && progress > 30 ? "(Processando...)" : ""}</p>
+              <p className="text-sm text-muted-foreground text-center">
+                {progress}% 
+                {progress < 35 && " (Iniciando...)"}
+                {progress >= 35 && progress < 50 && " (Preparando arquivo...)"}
+                {progress >= 50 && progress < 100 && " (Processando com IA... pode levar alguns instantes)"}
+                {progress === 100 && " (Concluído!)"}
+              </p>
             </div>
           )}
         </CardContent>
         <CardFooter className="gap-2">
           <Button onClick={handleAnalyze} disabled={!selectedFile || isLoading}>
             {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
-            {isLoading ? "Analisando..." : "Analisar Documento"}
+            {isLoading ? "Analisando Documento..." : "Analisar Documento"}
           </Button>
           <Button variant="outline" onClick={handleReset} disabled={isLoading}>
              <RotateCcw className="mr-2 h-4 w-4" /> Reiniciar
@@ -191,10 +206,10 @@ export default function DocumentAnalysisPage() {
       </Card>
 
       {analysisResult && (
-        <div className="grid gap-6">
+        <div className="grid gap-6 mt-6">
             <Card>
                 <CardHeader>
-                    <CardTitle className="flex items-center gap-2"><Info className="h-6 w-6 text-primary" /> Informações Gerais</CardTitle>
+                    <CardTitle className="flex items-center gap-2"><Info className="h-6 w-6 text-primary" /> Informações Gerais do Documento</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2">
                     <p><strong>Nome do Arquivo:</strong> {selectedFile?.name || "N/A"}</p>
@@ -204,17 +219,17 @@ export default function DocumentAnalysisPage() {
             
             <Card>
                 <CardHeader>
-                    <CardTitle className="flex items-center gap-2"><FileTextIcon className="h-6 w-6 text-primary" /> Resumo do Documento</CardTitle>
+                    <CardTitle className="flex items-center gap-2"><BookOpen className="h-6 w-6 text-primary" /> Resumo Original do Documento</CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <Textarea value={analysisResult.summary} readOnly rows={8} className="bg-muted/50" />
+                    <Textarea value={analysisResult.summary} readOnly rows={6} className="bg-muted/50" />
                 </CardContent>
             </Card>
 
             {analysisResult.keyEntities && analysisResult.keyEntities.length > 0 && (
                 <Card>
                     <CardHeader>
-                        <CardTitle className="flex items-center gap-2"><CheckCircle className="h-6 w-6 text-green-500" /> Entidades Chave Identificadas</CardTitle>
+                        <CardTitle className="flex items-center gap-2"><CheckCircle className="h-6 w-6 text-green-500" /> Entidades Chave (Texto Original)</CardTitle>
                     </CardHeader>
                     <CardContent>
                         <div className="flex flex-wrap gap-2">
@@ -228,10 +243,92 @@ export default function DocumentAnalysisPage() {
                 </Card>
             )}
             
+            <Accordion type="multiple" className="w-full space-y-4">
+                {analysisResult.investigatorAnalysis && (
+                    <AccordionItem value="investigator-analysis" className="border rounded-lg bg-card">
+                        <AccordionTrigger className="p-4 text-lg font-semibold hover:no-underline">
+                            <div className="flex items-center gap-2"><UserCheck className="h-6 w-6 text-blue-600" /> Análise do Investigador</div>
+                        </AccordionTrigger>
+                        <AccordionContent className="p-4 pt-0 space-y-4">
+                            <div>
+                                <Label className="font-semibold text-md">Observações Detalhadas:</Label>
+                                <Textarea value={analysisResult.investigatorAnalysis.observations} readOnly rows={8} className="bg-muted/50 mt-1" />
+                            </div>
+                            {analysisResult.investigatorAnalysis.potentialLeads && analysisResult.investigatorAnalysis.potentialLeads.length > 0 && (
+                                <div>
+                                    <Label className="font-semibold text-md">Pistas Potenciais Identificadas:</Label>
+                                    <ul className="list-disc list-inside space-y-1 bg-muted/30 p-3 rounded-md mt-1">
+                                        {analysisResult.investigatorAnalysis.potentialLeads.map((lead, index) => (
+                                            <li key={index}>{lead}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+                        </AccordionContent>
+                    </AccordionItem>
+                )}
+
+                {analysisResult.clerkReport && (
+                     <AccordionItem value="clerk-report" className="border rounded-lg bg-card">
+                        <AccordionTrigger className="p-4 text-lg font-semibold hover:no-underline">
+                             <div className="flex items-center gap-2"><UserEdit className="h-6 w-6 text-orange-600" /> Relatório do Escrivão</div>
+                        </AccordionTrigger>
+                        <AccordionContent className="p-4 pt-0 space-y-4">
+                            <div>
+                                <Label className="font-semibold text-md">Sumário Formalizado dos Fatos (Estilo B.O.):</Label>
+                                <Textarea value={analysisResult.clerkReport.formalizedSummary} readOnly rows={8} className="bg-muted/50 mt-1" />
+                            </div>
+                            {analysisResult.clerkReport.keyInformationStructured && analysisResult.clerkReport.keyInformationStructured.length > 0 && (
+                                <div>
+                                    <Label className="font-semibold text-md">Informações Chave Estruturadas:</Label>
+                                     <div className="space-y-2 mt-1">
+                                        {analysisResult.clerkReport.keyInformationStructured.map((info, index) => (
+                                            <div key={index} className="p-2 border rounded-md bg-muted/30">
+                                                <p><strong>{info.category}:</strong> {info.details}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </AccordionContent>
+                    </AccordionItem>
+                )}
+
+                {analysisResult.delegateAssessment && (
+                    <AccordionItem value="delegate-assessment" className="border rounded-lg bg-card">
+                        <AccordionTrigger className="p-4 text-lg font-semibold hover:no-underline">
+                             <div className="flex items-center gap-2"><UserTie className="h-6 w-6 text-red-600" /> Avaliação do Delegado</div>
+                        </AccordionTrigger>
+                        <AccordionContent className="p-4 pt-0 space-y-4">
+                             <div>
+                                <Label className="font-semibold text-md flex items-center gap-1"><ListChecks/> Avaliação Geral do Caso:</Label>
+                                <Textarea value={analysisResult.delegateAssessment.overallAssessment} readOnly rows={6} className="bg-muted/50 mt-1" />
+                            </div>
+                            {analysisResult.delegateAssessment.suggestedActions && analysisResult.delegateAssessment.suggestedActions.length > 0 && (
+                                <div>
+                                    <Label className="font-semibold text-md flex items-center gap-1"><AlertTriangle/> Ações Sugeridas / Próximos Passos:</Label>
+                                    <ul className="list-disc list-inside space-y-1 bg-muted/30 p-3 rounded-md mt-1">
+                                        {analysisResult.delegateAssessment.suggestedActions.map((action, index) => (
+                                            <li key={index}>{action}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+                            {analysisResult.delegateAssessment.legalConsiderations && (
+                                 <div>
+                                    <Label className="font-semibold text-md flex items-center gap-1"><Scale /> Considerações Legais Preliminares:</Label>
+                                    <Textarea value={analysisResult.delegateAssessment.legalConsiderations} readOnly rows={4} className="bg-muted/50 mt-1" />
+                                </div>
+                            )}
+                        </AccordionContent>
+                    </AccordionItem>
+                )}
+            </Accordion>
+
             {analysisResult.extractedText && (
                  <Card>
                     <CardHeader>
-                        <CardTitle className="flex items-center gap-2"><FileTextIcon className="h-6 w-6 text-primary" /> Texto Extraído Completo</CardTitle>
+                        <CardTitle className="flex items-center gap-2"><FileTextIcon className="h-6 w-6 text-primary" /> Texto Extraído Completo do Documento</CardTitle>
                     </CardHeader>
                     <CardContent>
                         <ScrollArea className="h-[300px] w-full rounded-md border p-4 bg-muted/50">

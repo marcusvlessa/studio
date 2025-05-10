@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { ImageIcon, FileImage, Search, RotateCcw, Loader2, Sparkles, Smile } from "lucide-react";
+import { FileImage, Search, RotateCcw, Loader2, Sparkles, Smile } from "lucide-react"; // Removed ImageIcon as FileImage is used
 import { useToast } from "@/hooks/use-toast";
 import { analyzeImage, type AnalyzeImageInput, type AnalyzeImageOutput } from "@/ai/flows/analyze-image";
 import Image from "next/image"; 
@@ -65,14 +65,14 @@ export default function ImageAnalysisPage() {
       if (currentProgress <= 30) { 
         setProgress(currentProgress);
       } else {
-        clearInterval(progressInterval);
+        // Hold progress
       }
-    }, 100);
+    }, 200);
 
     try {
       const photoDataUri = imagePreview;
       
-      setProgress(50);
+      setProgress(50); // Image ready, AI call starting
 
       const input: AnalyzeImageInput = { photoDataUri };
       const result = await analyzeImage(input);
@@ -117,18 +117,18 @@ export default function ImageAnalysisPage() {
         <CardContent className="space-y-4">
           <div className="grid w-full max-w-sm items-center gap-1.5">
             <Label htmlFor="image-upload">Arquivo de Imagem</Label>
-            <Input id="image-upload" type="file" accept="image/*" onChange={handleFileChange} ref={fileInputRef} />
+            <Input id="image-upload" type="file" accept="image/*" onChange={handleFileChange} ref={fileInputRef} disabled={isLoading}/>
           </div>
           {selectedFile && (
              <p className="text-sm text-muted-foreground flex items-center">
                 <FileImage className="mr-2 h-4 w-4" /> 
-                Selecionado: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(2)} KB)
+                Selecionado: {selectedFile.name} ({(selectedFile.size / (1024*1024)).toFixed(2)} MB)
             </p>
           )}
           {imagePreview && (
             <div className="mt-4">
               <Label>Pré-visualização da Imagem:</Label>
-              <div className="mt-2 w-full max-w-md aspect-video relative overflow-hidden rounded-md border shadow-sm">
+              <div className="mt-2 w-full max-w-md aspect-video relative overflow-hidden rounded-md border shadow-sm bg-muted/30">
                 <Image src={imagePreview} alt="Preview" layout="fill" objectFit="contain" />
               </div>
             </div>
@@ -137,14 +137,20 @@ export default function ImageAnalysisPage() {
             <div className="space-y-2">
               <Label>Progresso da Análise:</Label>
               <Progress value={progress} className="w-full" />
-              <p className="text-sm text-muted-foreground text-center">{progress}% {progress < 100 && progress > 30 ? "(Analisando...)" : ""}</p>
+              <p className="text-sm text-muted-foreground text-center">
+                {progress}%
+                {progress < 35 && " (Iniciando...)"}
+                {progress >= 35 && progress < 50 && " (Preparando imagem...)"}
+                {progress >= 50 && progress < 100 && " (Analisando com IA...)"}
+                {progress === 100 && " (Concluído!)"}
+              </p>
             </div>
           )}
         </CardContent>
         <CardFooter className="gap-2">
           <Button onClick={handleAnalyze} disabled={!selectedFile || isLoading}>
             {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
-            {isLoading ? "Analisando..." : "Analisar Imagem"}
+            {isLoading ? "Analisando Imagem..." : "Analisar Imagem"}
           </Button>
            <Button variant="outline" onClick={handleReset} disabled={isLoading}>
              <RotateCcw className="mr-2 h-4 w-4" /> Reiniciar
@@ -170,7 +176,7 @@ export default function ImageAnalysisPage() {
                 <p className="text-xs text-muted-foreground mt-1">Nota: Leituras de placa são sugestivas e podem não ser 100% precisas.</p>
               </div>
             )}
-            {!analysisResult.possiblePlateRead && (
+            {!analysisResult.possiblePlateRead && analysisResult.possiblePlateRead !== undefined && (
                  <p className="text-sm text-muted-foreground">Nenhuma placa de veículo detectada com confiança.</p>
             )}
 
@@ -193,15 +199,16 @@ export default function ImageAnalysisPage() {
                         {analysisResult.facialRecognition.facesDetected > 0 && analysisResult.facialRecognition.details && analysisResult.facialRecognition.details.length > 0 && (
                             <Accordion type="single" collapsible className="w-full">
                                 <AccordionItem value="face-details">
-                                <AccordionTrigger className="text-sm">Ver Detalhes das Faces</AccordionTrigger>
+                                <AccordionTrigger className="text-sm py-2">Ver Detalhes das Faces</AccordionTrigger>
                                 <AccordionContent>
                                     <ul className="list-disc list-inside space-y-1 text-sm pl-2">
                                     {analysisResult.facialRecognition.details.map((detail, index) => (
                                         <li key={index}>
                                             Face {index + 1}: 
                                             {detail.confidence && ` Confiança: ${(detail.confidence * 100).toFixed(0)}%.`}
-                                            {detail.attributes && Object.keys(detail.attributes).length > 0 && ` Atributos: ${Object.entries(detail.attributes).map(([key, value]) => `${key}: ${value}`).join(', ')}`}
-                                            {!detail.confidence && (!detail.attributes || Object.keys(detail.attributes).length === 0) && " Sem detalhes adicionais."}
+                                            {detail.attributes && Object.keys(detail.attributes).length > 0 && ` Atributos: ${Object.entries(detail.attributes).map(([key, value]) => `${key}: ${value}`).join(', ')}.`}
+                                            {detail.boundingBox && ` Posição: [${detail.boundingBox.join(', ')}].`}
+                                            {(!detail.confidence && (!detail.attributes || Object.keys(detail.attributes).length === 0) && !detail.boundingBox) && " Sem detalhes adicionais."}
                                         </li>
                                     ))}
                                     </ul>

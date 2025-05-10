@@ -54,21 +54,22 @@ export default function AudioAnalysisPage() {
       if (currentProgress <= 30) { 
         setProgress(currentProgress);
       } else {
-        clearInterval(progressInterval);
+        // Hold progress
       }
-    }, 100);
+    }, 200);
 
 
     try {
       const reader = new FileReader();
       reader.readAsDataURL(selectedFile);
       reader.onload = async (e) => {
+        clearInterval(progressInterval);
         const audioDataUri = e.target?.result as string;
         if (!audioDataUri) {
           throw new Error("Não foi possível ler o arquivo.");
         }
         
-        setProgress(50);
+        setProgress(50); // File read, AI call starting
 
         const input: TranscribeAudioInput = { audioDataUri };
         const result = await transcribeAudio(input);
@@ -77,15 +78,20 @@ export default function AudioAnalysisPage() {
         toast({ title: "Transcrição Concluída", description: "Áudio processado com sucesso." });
       };
       reader.onerror = () => {
+        clearInterval(progressInterval);
         throw new Error("Erro ao ler o arquivo.");
       }
     } catch (error) {
+      clearInterval(progressInterval);
       console.error("Erro na transcrição:", error);
       toast({ variant: "destructive", title: "Falha na Transcrição", description: error instanceof Error ? error.message : "Ocorreu um erro desconhecido." });
       setProgress(0);
     } finally {
-      clearInterval(progressInterval); 
-      setIsLoading(false);
+      // setIsLoading will be set by onload or onerror
+      // To ensure it's false if an error occurs before reader events:
+       if (isLoading && !transcriptionResult && progress !== 100) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -115,26 +121,32 @@ export default function AudioAnalysisPage() {
         <CardContent className="space-y-4">
           <div className="grid w-full max-w-sm items-center gap-1.5">
             <Label htmlFor="audio-upload">Arquivo de Áudio</Label>
-            <Input id="audio-upload" type="file" accept="audio/*" onChange={handleFileChange} ref={fileInputRef} />
+            <Input id="audio-upload" type="file" accept="audio/*" onChange={handleFileChange} ref={fileInputRef} disabled={isLoading}/>
           </div>
           {selectedFile && (
              <p className="text-sm text-muted-foreground flex items-center">
                 <FileAudio className="mr-2 h-4 w-4" /> 
-                Selecionado: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(2)} KB)
+                Selecionado: {selectedFile.name} ({(selectedFile.size / (1024*1024)).toFixed(2)} MB)
             </p>
           )}
           {isLoading && (
             <div className="space-y-2">
               <Label>Progresso da Análise:</Label>
               <Progress value={progress} className="w-full" />
-              <p className="text-sm text-muted-foreground text-center">{progress}% {progress < 100 && progress > 30 ? "(Processando...)" : ""}</p>
+              <p className="text-sm text-muted-foreground text-center">
+                {progress}%
+                {progress < 35 && " (Iniciando...)"}
+                {progress >= 35 && progress < 50 && " (Preparando áudio...)"}
+                {progress >= 50 && progress < 100 && " (Transcrevendo com IA...)"}
+                {progress === 100 && " (Concluído!)"}
+                </p>
             </div>
           )}
         </CardContent>
         <CardFooter className="gap-2">
           <Button onClick={handleAnalyze} disabled={!selectedFile || isLoading}>
             {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mic className="mr-2 h-4 w-4" />}
-            {isLoading ? "Transcrevendo..." : "Transcrever Áudio"}
+            {isLoading ? "Transcrevendo Áudio..." : "Transcrever Áudio"}
           </Button>
           <Button variant="outline" onClick={handleReset} disabled={isLoading}>
              <RotateCcw className="mr-2 h-4 w-4" /> Reiniciar

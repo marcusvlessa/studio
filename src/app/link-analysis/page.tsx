@@ -148,7 +148,7 @@ export default function LinkAnalysisPage() {
                 const fileDataUri = e.target?.result as string;
                 if (!fileDataUri) {
                     toast({ variant: "destructive", title: "Erro ao Ler PDF", description: "Não foi possível ler o conteúdo do arquivo PDF."});
-                    reject(new Error("Erro ao ler PDF"));
+                    reject(new Error("Erro ao ler PDF: URI de dados vazia."));
                     return;
                 }
                 setProgress(30);
@@ -171,19 +171,27 @@ export default function LinkAnalysisPage() {
                     reject(pdfError);
                 }
             };
-            reader.onerror = (error) => {
+            reader.onerror = (errorEvent) => { // errorEvent is a ProgressEvent
                  toast({ variant: "destructive", title: "Erro ao Ler PDF", description: "Ocorreu um erro ao tentar ler o arquivo PDF."});
-                 reject(new Error(`Erro no reader do PDF: ${error}`));
+                 reject(new Error(`Erro no leitor de PDF ao processar ${selectedFile.name}. Detalhes: ${errorEvent.type}`));
             }
         });
 
       } else if (selectedFile.type === "text/csv" || selectedFile.type === "text/plain" || selectedFile.name.toLowerCase().endsWith(".txt") || selectedFile.name.toLowerCase().endsWith(".csv")) {
         setProgress(20);
         setProcessingMessage(`Lendo arquivo de texto: ${selectedFile.name}...`);
-        const fileText = await selectedFile.text();
-        setProgress(50);
-        setProcessingMessage("Extraindo entidades do texto...");
-        entities = parseEntitiesFromText(fileText);
+        try {
+            const fileText = await selectedFile.text();
+            setProgress(50);
+            setProcessingMessage("Extraindo entidades do texto...");
+            entities = parseEntitiesFromText(fileText);
+        } catch (textReadError) {
+            console.error("Erro ao ler arquivo de texto:", textReadError);
+            toast({ variant: "destructive", title: "Erro ao Ler Arquivo de Texto", description: `Não foi possível ler o conteúdo do arquivo ${selectedFile.name}. Verifique se é um arquivo de texto válido e tente novamente.` });
+            setIsLoading(false); // Ensure loading state is reset
+            setProgress(0);
+            return; // Exit if text file cannot be read
+        }
       } else {
         // For XLS, XLSX, ANB, ANX - show warning, attempt text extraction (might fail or be garbage)
         toast({ 
@@ -194,69 +202,74 @@ export default function LinkAnalysisPage() {
         });
         setProgress(20);
         setProcessingMessage(`Tentando ler arquivo: ${selectedFile.name}...`);
-        try {
-            // Attempt to use analyzeDocument for complex types if it can handle them (e.g. if it is image based)
-            // This is a placeholder; Genkit's media handling primarily works well with standard text/image/audio.
-            // For structured binary like XLS, true parsing needs a library.
-            const reader = new FileReader();
-            reader.readAsDataURL(selectedFile);
-            await new Promise<void>((resolve, reject) => {
-                 reader.onloadend = async (e) => {
-                    const fileDataUri = e.target?.result as string;
-                    if (!fileDataUri) {
-                        reject(new Error("Não foi possível ler arquivo complexo."));
-                        return;
+        const reader = new FileReader(); // New reader for complex files
+        reader.readAsDataURL(selectedFile);
+
+        await new Promise<void>((resolve, reject) => {
+             reader.onloadend = async (e) => {
+                const fileDataUri = e.target?.result as string;
+                if (!fileDataUri) {
+                    toast({variant: "destructive", title: "Erro ao Ler Arquivo Complexo", description: "Não foi possível ler o conteúdo do arquivo complexo."});
+                    reject(new Error("Erro ao ler arquivo complexo: URI de dados vazia."));
+                    return;
+                }
+                setProgress(40);
+                setProcessingMessage("Tentando extração de texto genérica com IA...");
+                try {
+                    const docInput: AnalyzeDocumentInput = { fileDataUri, fileName: selectedFile.name };
+                    const docResult = await analyzeDocument(docInput);
+                    if (docResult.extractedText && docResult.extractedText.length > 0) {
+                        entities = parseEntitiesFromText(docResult.extractedText);
+                    } else {
+                         toast({ variant: "default", title: "Extração de Texto", description: "Não foi possível extrair texto relevante do arquivo complexo." });
                     }
-                    setProgress(40);
-                    setProcessingMessage("Tentando extração de texto genérica com IA...");
-                    try {
-                        const docInput: AnalyzeDocumentInput = { fileDataUri, fileName: selectedFile.name };
-                        const docResult = await analyzeDocument(docInput);
-                        if (docResult.extractedText && docResult.extractedText.length > 0) {
-                            entities = parseEntitiesFromText(docResult.extractedText);
-                        } else {
-                             toast({ variant: "default", title: "Extração de Texto", description: "Não foi possível extrair texto relevante do arquivo complexo." });
-                        }
-                        resolve();
-                    } catch (complexError) {
-                        reject(complexError);
-                    }
-                };
-                reader.onerror = reject;
-            });
-        } catch (readError) {
-            toast({ variant: "destructive", title: "Erro ao Ler Arquivo Complexo", description: "Não foi possível ler o conteúdo. Considere converter para TXT/CSV." });
-            setIsLoading(false);
-            setProgress(0);
-            return;
-        }
+                    resolve();
+                } catch (complexError) {
+                    console.error("Erro na extração de texto de arquivo complexo:", complexError);
+                    toast({ variant: "destructive", title: "Erro na Análise do Arquivo Complexo", description: complexError instanceof Error ? complexError.message : "Falha ao analisar o arquivo complexo com IA." });
+                    reject(complexError);
+                }
+            };
+            reader.onerror = (errorEvent) => {
+                 toast({ variant: "destructive", title: "Erro ao Ler Arquivo Complexo", description: "Ocorreu um erro ao tentar ler o arquivo complexo."});
+                 reject(new Error(`Erro no leitor de arquivo complexo ao processar ${selectedFile.name}. Detalhes: ${errorEvent.type}`));
+            }
+        });
       }
 
-      if (entities.length === 0) {
+      if (entities.length === 0 && !isLoading) { // Check isLoading to prevent toast if an error already set it to false.
         toast({ variant: "default", title: "Nenhuma Entidade Encontrada", description: "O arquivo não contém entidades que puderam ser extraídas automaticamente ou está mal formatado." });
         setIsLoading(false);
         setProgress(0);
         return;
       }
       
-      setProgress(70);
-      setProcessingMessage(`Analisando ${entities.length} entidades com IA (Contexto: ${analysisContext})...`);
-      const input: FindEntityRelationshipsInput = { entities, analysisContext };
-      const result = await findEntityRelationships(input);
-      setRelationships(result.relationships);
-      setProgress(100);
+      if (entities.length > 0) { // Only proceed if entities were found
+        setProgress(70);
+        setProcessingMessage(`Analisando ${entities.length} entidades com IA (Contexto: ${analysisContext})...`);
+        const input: FindEntityRelationshipsInput = { entities, analysisContext };
+        const result = await findEntityRelationships(input);
+        setRelationships(result.relationships);
+        setProgress(100);
 
-      if (result.relationships && result.relationships.length > 0) {
-        toast({ title: "Análise de Vínculos Concluída", description: `Foram encontrados ${result.relationships.length} vínculos potenciais.` });
-      } else {
-        toast({ title: "Análise de Vínculos Concluída", description: "Nenhum vínculo direto foi encontrado para as entidades fornecidas." });
+        if (result.relationships && result.relationships.length > 0) {
+          toast({ title: "Análise de Vínculos Concluída", description: `Foram encontrados ${result.relationships.length} vínculos potenciais.` });
+        } else {
+          toast({ title: "Análise de Vínculos Concluída", description: "Nenhum vínculo direto foi encontrado para as entidades fornecidas." });
+        }
+      } else if (isLoading) { // If no entities but still loading (e.g. PDF/Complex path did not populate entities but didn't error out before this check)
+        toast({ variant: "default", title: "Nenhuma Entidade Para Analisar", description: "Não foram extraídas entidades do arquivo para realizar a análise de vínculos." });
       }
-    } catch (error) {
+
+    } catch (error) { // This outer catch handles errors from promise rejections (e.g., from FileReader or analyzeDocument)
       console.error("Erro na análise de vínculos:", error);
-      toast({ variant: "destructive", title: "Falha na Análise", description: error instanceof Error ? error.message : "Ocorreu um erro desconhecido ao processar o arquivo ou analisar os vínculos." });
-      setProgress(0);
+      // The specific toast for the error (e.g. PDF read error, AI error) should have already been shown.
+      // This is a fallback.
+      if (!(error instanceof Error && (error.message.includes("Erro ao ler PDF") || error.message.includes("Falha ao analisar o PDF") || error.message.includes("Erro ao ler arquivo complexo") || error.message.includes("Falha ao analisar o arquivo complexo")))) {
+        toast({ variant: "destructive", title: "Falha Geral na Análise", description: error instanceof Error ? error.message : "Ocorreu um erro desconhecido ao processar o arquivo ou analisar os vínculos." });
+      }
     } finally {
-      setIsLoading(false);
+      setIsLoading(false); // This will always run
     }
   };
 

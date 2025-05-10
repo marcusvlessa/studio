@@ -52,23 +52,28 @@ export default function LinkAnalysisPage() {
 
   const parseEntitiesFromText = (text: string): string[] => {
     const entities = new Set<string>();
-    let potentialEntities = text.split(/\r?\n/); // New lines
+    const lines = text.split(/\r?\n/);
 
-    if (potentialEntities.length < 10 && text.includes(',')) { // If few lines, also try commas
-        potentialEntities = [...potentialEntities, ...text.split(',')];
-    }
-    if (potentialEntities.length < 10 && text.includes(';')) { // And semicolons
-        potentialEntities = [...potentialEntities, ...text.split(';')];
-    }
-     if (potentialEntities.length < 10 && text.includes('\t')) { // And tabs
-        potentialEntities = [...potentialEntities, ...text.split('\t')];
-    }
+    lines.forEach(line => {
+        // First, try to split by common delimiters to get individual values from table-like rows
+        const potentialDelimiters = [',', ';', '\t'];
+        let cells: string[] = [line]; // Start with the line itself
 
-    potentialEntities.forEach(line => {
-        const trimmedLine = line.trim();
-        if (trimmedLine && trimmedLine.length > 1 && trimmedLine.length < 200) { 
-            entities.add(trimmedLine);
+        for (const delimiter of potentialDelimiters) {
+            if (line.includes(delimiter)) {
+                cells = line.split(delimiter);
+                break; // Found a delimiter, assume this is the primary one for this line
+            }
         }
+        
+        cells.forEach(cell => {
+            const trimmedCell = cell.trim();
+            // Add more specific filters if needed (e.g., regex for phone numbers, IMEIs)
+            // For now, basic length and content check
+            if (trimmedCell && trimmedCell.length > 1 && trimmedCell.length < 200) { 
+                entities.add(trimmedCell);
+            }
+        });
     });
     
     return Array.from(entities).filter(e => e.length > 0);
@@ -276,7 +281,7 @@ export default function LinkAnalysisPage() {
         <AlertTitle>Dicas para Melhor Análise</AlertTitle>
         <AlertDescription>
           <ul className="list-disc list-inside text-xs">
-            <li>Para arquivos <strong>CSV/TXT</strong>: certifique-se que as entidades estão separadas por linha, vírgula, ponto e vírgula ou tabulação.</li>
+            <li>Para arquivos <strong>CSV/TXT</strong>: certifique-se que as entidades estão separadas por linha, vírgula, ponto e vírgula ou tabulação. A IA tentará identificar as entidades individualmente.</li>
             <li>Arquivos <strong>PDF</strong>: o texto será extraído automaticamente para identificar entidades. PDFs baseados em imagem podem não ter bons resultados.</li>
             <li>Arquivos <strong>XLS/XLSX/ANB/ANX</strong>: A extração automática é complexa. Para melhores resultados, converta os dados relevantes para CSV ou TXT, ou cole o texto diretamente.</li>
             <li>Selecionar um <strong>Contexto da Análise</strong> pode ajudar a IA a identificar tipos de entidades e relações mais relevantes para seu objetivo.</li>
@@ -348,3 +353,4 @@ export default function LinkAnalysisPage() {
     </div>
   );
 }
+

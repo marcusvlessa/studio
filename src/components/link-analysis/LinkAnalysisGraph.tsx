@@ -80,22 +80,20 @@ export function LinkAnalysisGraph({ relationshipsData }: LinkAnalysisGraphProps)
     const generatedEdges: Edge<EdgeData>[] = [];
 
     relationshipsData.forEach((rel, index) => {
-      // Node 1
       if (!uniqueEntities.has(rel.entity1)) {
         uniqueEntities.set(rel.entity1, {
           id: rel.entity1,
-          type: 'custom', // Using custom node type
+          type: 'custom',
           data: { label: rel.entity1, type: rel.entity1Type || "Desconhecido" },
-          position: { x: Math.random() * 600, y: Math.random() * 400 },
+          position: { x: 0, y: 0 }, // Placeholder, will be set below
         });
       }
-      // Node 2
       if (!uniqueEntities.has(rel.entity2)) {
         uniqueEntities.set(rel.entity2, {
           id: rel.entity2,
-          type: 'custom', // Using custom node type
+          type: 'custom',
           data: { label: rel.entity2, type: rel.entity2Type || "Desconhecido" },
-          position: { x: Math.random() * 600 + 50, y: Math.random() * 400 + 50 },
+          position: { x: 0, y: 0 }, // Placeholder
         });
       }
 
@@ -104,8 +102,8 @@ export function LinkAnalysisGraph({ relationshipsData }: LinkAnalysisGraphProps)
         source: rel.entity1,
         target: rel.entity2,
         label: rel.relationship + (rel.strength ? ` (${(rel.strength * 100).toFixed(0)}%)` : ''),
-        type: 'smoothstep', // or 'default' for straight lines
-        animated: rel.strength && rel.strength > 0.7, // Animate strong relationships
+        type: 'smoothstep',
+        animated: rel.strength && rel.strength > 0.7,
         markerEnd: {
             type: MarkerType.ArrowClosed,
             width: 20,
@@ -127,7 +125,20 @@ export function LinkAnalysisGraph({ relationshipsData }: LinkAnalysisGraphProps)
       });
     });
     
-    return { initialNodes: Array.from(uniqueEntities.values()), initialEdges: generatedEdges };
+    // Basic grid layout for nodes
+    const nodesArray = Array.from(uniqueEntities.values());
+    const numNodes = nodesArray.length;
+    const nodesPerRow = Math.max(1, Math.ceil(Math.sqrt(numNodes)));
+    const xSpacing = 250; // Horizontal spacing between nodes
+    const ySpacing = 150; // Vertical spacing between nodes
+
+    nodesArray.forEach((node, index) => {
+      const row = Math.floor(index / nodesPerRow);
+      const col = index % nodesPerRow;
+      node.position = { x: col * xSpacing, y: row * ySpacing };
+    });
+    
+    return { initialNodes: nodesArray, initialEdges: generatedEdges };
   }, [relationshipsData]);
 
   useEffect(() => {
@@ -162,10 +173,13 @@ export function LinkAnalysisGraph({ relationshipsData }: LinkAnalysisGraphProps)
                 >
                     <Controls showInteractive={false} />
                     <MiniMap nodeStrokeWidth={3} zoomable pannable nodeColor={(n) => {
-                        if (n.data?.type?.toLowerCase().includes('pessoa')) return 'hsl(var(--chart-1))';
-                        if (n.data?.type?.toLowerCase().includes('organiza')) return 'hsl(var(--chart-2))';
-                        if (n.data?.type?.toLowerCase().includes('local')) return 'hsl(var(--chart-3))';
-                        if (n.data?.type?.toLowerCase().includes('telefon')) return 'hsl(var(--chart-4))';
+                        const typeLower = n.data?.type?.toLowerCase();
+                        if (typeLower?.includes('pessoa')) return 'hsl(var(--chart-1))';
+                        if (typeLower?.includes('organiza')) return 'hsl(var(--chart-2))';
+                        if (typeLower?.includes('local')) return 'hsl(var(--chart-3))';
+                        if (typeLower?.includes('telefon') || typeLower?.includes('número') || typeLower?.includes('imei')) return 'hsl(var(--chart-4))';
+                        if (typeLower?.includes('financeir') || typeLower?.includes('conta') || typeLower?.includes('valor')) return 'hsl(var(--chart-5))';
+                        if (typeLower?.includes('ip') || typeLower?.includes('email') || typeLower?.includes('site')) return 'hsl(var(--accent))';
                         return 'hsl(var(--muted))';
                     }}/>
                     <Background gap={16} color={cn("text-border")} />
@@ -175,3 +189,4 @@ export function LinkAnalysisGraph({ relationshipsData }: LinkAnalysisGraphProps)
     </Card>
   );
 }
+

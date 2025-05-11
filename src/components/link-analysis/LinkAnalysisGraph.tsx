@@ -53,7 +53,8 @@ const CustomNodeComponent = ({ data }: NodeProps<CustomNodeData>) => {
   );
 };
 
-const nodeTypes = {
+// Define nodeTypes outside the component or memoize it
+const customNodeTypes = {
   custom: CustomNodeComponent,
 };
 
@@ -75,13 +76,25 @@ export function LinkAnalysisGraph({ relationshipsData }: LinkAnalysisGraphProps)
       return { initialNodes: [], initialEdges: [] };
     }
 
-    const uniqueEntities = new Map<string, Node<CustomNodeData>>();
+    const uniqueEntities = new Map<string, Node<CustomNodeData>>(); // Map original entity name to Node object
+    const entityToNodeIdMap = new Map<string, string>(); // Map original entity name to unique node ID
+    let nodeIdCounter = 0;
+    const getNodeId = (entityName: string) => {
+        if (!entityToNodeIdMap.has(entityName)) {
+            entityToNodeIdMap.set(entityName, `node_${nodeIdCounter++}`);
+        }
+        return entityToNodeIdMap.get(entityName)!;
+    };
+    
     const generatedEdges: Edge<EdgeData>[] = [];
 
     relationshipsData.forEach((rel, index) => {
-      if (!uniqueEntities.has(rel.entity1)) {
+      const sourceNodeId = getNodeId(rel.entity1);
+      const targetNodeId = getNodeId(rel.entity2);
+
+      if (!uniqueEntities.has(rel.entity1)) { // Check using original entity name for uniqueness of data
         uniqueEntities.set(rel.entity1, {
-          id: rel.entity1,
+          id: sourceNodeId, // Use generated unique ID for the node
           type: 'custom',
           data: { label: rel.entity1, type: rel.entity1Type || "Desconhecido" },
           position: { x: 0, y: 0 }, 
@@ -89,7 +102,7 @@ export function LinkAnalysisGraph({ relationshipsData }: LinkAnalysisGraphProps)
       }
       if (!uniqueEntities.has(rel.entity2)) {
         uniqueEntities.set(rel.entity2, {
-          id: rel.entity2,
+          id: targetNodeId,
           type: 'custom',
           data: { label: rel.entity2, type: rel.entity2Type || "Desconhecido" },
           position: { x: 0, y: 0 }, 
@@ -97,11 +110,10 @@ export function LinkAnalysisGraph({ relationshipsData }: LinkAnalysisGraphProps)
       }
 
       generatedEdges.push({
-        id: `e-${rel.entity1}-${rel.entity2}-${index}`, // Ensure unique edge IDs
-        source: rel.entity1,
-        target: rel.entity2,
+        id: `e-${sourceNodeId}-${targetNodeId}-${index}`, // Ensure unique edge IDs using unique node IDs
+        source: sourceNodeId,
+        target: targetNodeId,
         label: rel.relationship,
-        // type: 'smoothstep', // Using default Bezier edges for broader compatibility
         style: {
           strokeWidth: 2, 
           stroke: 'hsl(var(--primary))', 
@@ -122,8 +134,7 @@ export function LinkAnalysisGraph({ relationshipsData }: LinkAnalysisGraphProps)
     const nodesArray = Array.from(uniqueEntities.values());
     const numNodes = nodesArray.length;
     
-    // Simple circular layout
-    const radius = numNodes > 1 ? Math.max(150, numNodes * 40) : 0; // Adjust radius based on node count
+    const radius = numNodes > 1 ? Math.max(150, numNodes * 40) : 0; 
     const centerX = 0; 
     const centerY = 0; 
 
@@ -164,7 +175,7 @@ export function LinkAnalysisGraph({ relationshipsData }: LinkAnalysisGraphProps)
                     edges={edges}
                     onNodesChange={onNodesChange}
                     onEdgesChange={onEdgesChange}
-                    nodeTypes={nodeTypes}
+                    nodeTypes={customNodeTypes} // Use the memoized/top-level definition
                     fitView
                     nodesDraggable
                     nodesConnectable={false} 
@@ -190,4 +201,3 @@ export function LinkAnalysisGraph({ relationshipsData }: LinkAnalysisGraphProps)
     </Card>
   );
 }
-

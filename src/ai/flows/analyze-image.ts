@@ -41,7 +41,27 @@ const AnalyzeImageOutputSchema = z.object({
 
 export type AnalyzeImageOutput = z.infer<typeof AnalyzeImageOutputSchema>;
 
+// Helper function to extract MIME type from data URI
+function getMimeTypeFromDataUri(dataUri: string): string | null {
+  const match = dataUri.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,/);
+  return match ? match[1] : null;
+}
+
+const SUPPORTED_IMAGE_MIME_TYPES_FOR_GEMINI = [
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+];
+
 export async function analyzeImage(input: AnalyzeImageInput): Promise<AnalyzeImageOutput> {
+  const mimeType = getMimeTypeFromDataUri(input.photoDataUri);
+  if (!mimeType || !SUPPORTED_IMAGE_MIME_TYPES_FOR_GEMINI.includes(mimeType.toLowerCase())) {
+    const supportedTypes = SUPPORTED_IMAGE_MIME_TYPES_FOR_GEMINI.map(t => t.split('/')[1].toUpperCase()).join(', ');
+    throw new Error(`Tipo de imagem não suportado: ${mimeType || 'desconhecido'}. Por favor, use ${supportedTypes}.`);
+  }
   return analyzeImageFlow(input);
 }
 
@@ -91,3 +111,4 @@ const analyzeImageFlow = ai.defineFlow(
     return output;
   }
 );
+

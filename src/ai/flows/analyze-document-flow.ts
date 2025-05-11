@@ -72,28 +72,56 @@ function getMimeTypeFromDataUri(dataUri: string): string | null {
 const DIRECTLY_PROCESSABLE_MIME_TYPES = [
   'image/png',
   'image/jpeg',
-  'image/jpg', // Common alias for jpeg
+  'image/jpg',
   'image/gif',
   'image/webp',
   'application/pdf',
-  // Note: application/msword and application/vnd.openxmlformats-officedocument.wordprocessingml.document
-  // are generally not supported by Gemini's {{media}} for direct content extraction.
-  // They are better handled by converting to text first, if possible, or via this flow's textContent path.
 ];
 
 export async function analyzeDocument(input: AnalyzeDocumentInput): Promise<AnalyzeDocumentOutput> {
-  let processedInput = { ...input };
+  if (input.fileDataUri) {
+    const originalMimeType = getMimeTypeFromDataUri(input.fileDataUri);
+    const fileName = input.fileName || 'Desconhecido';
+    let processedFileDataUri = input.fileDataUri;
 
-  if (processedInput.fileDataUri) {
-    const mimeType = getMimeTypeFromDataUri(processedInput.fileDataUri);
-    if (!mimeType || !DIRECTLY_PROCESSABLE_MIME_TYPES.includes(mimeType.toLowerCase())) {
-      const fileName = processedInput.fileName || 'Desconhecido';
-      const detectedMimeType = mimeType || 'não detectado';
-      processedInput.textContent = `AVISO DO SISTEMA: O arquivo '${fileName}' (tipo MIME: ${detectedMimeType}) foi fornecido. Seu conteúdo binário não pode ser processado/extraído diretamente pela IA neste fluxo. A análise deve se concentrar no nome do arquivo, tipo MIME informado e na natureza deste aviso. Prossiga com a análise baseada nessas metainformações.`;
-      processedInput.fileDataUri = undefined; 
+    let effectiveMimeTypeForCheck = originalMimeType ? originalMimeType.toLowerCase() : null;
+    const isPdfByExtension = fileName.toLowerCase().endsWith('.pdf');
+
+    if (isPdfByExtension && (effectiveMimeTypeForCheck === 'application/octet-stream' || !effectiveMimeTypeForCheck)) {
+      effectiveMimeTypeForCheck = 'application/pdf';
+      // Reconstruct data URI if original MIME type was generic but it's a PDF by extension
+      // This helps ensure Gemini receives 'application/pdf' as the MIME type for the media part.
+      if (input.fileDataUri.includes(',')) {
+        const base64Content = input.fileDataUri.substring(input.fileDataUri.indexOf(',') + 1);
+        processedFileDataUri = `data:application/pdf;base64,${base64Content}`;
+      }
     }
+
+    if (effectiveMimeTypeForCheck && DIRECTLY_PROCESSABLE_MIME_TYPES.includes(effectiveMimeTypeForCheck)) {
+      const fileProcessingInput: AnalyzeDocumentInput = {
+        fileDataUri: processedFileDataUri, // Use the (potentially reconstructed) data URI
+        fileName: fileName,
+      };
+      return analyzeDocumentFlowInternal(fileProcessingInput);
+    } else {
+      const detectedMimeTypeInfo = originalMimeType || (isPdfByExtension ? 'pdf (por extensão)' : 'não detectado');
+      const systemMessage = `AVISO DO SISTEMA: O arquivo '${fileName}' (tipo MIME: ${detectedMimeTypeInfo}) foi fornecido. Seu conteúdo binário não pode ser processado/extraído diretamente pela IA neste fluxo. A análise deve se concentrar no nome do arquivo, tipo MIME informado e na natureza deste aviso. Prossiga com a análise baseada nessas metainformações.`;
+      
+      const textProcessingInput: AnalyzeDocumentInput = { 
+        textContent: systemMessage, 
+        fileName: fileName 
+      };
+      return analyzeDocumentFlowInternal(textProcessingInput);
+    }
+  } else if (input.textContent) {
+    const textProcessingInput: AnalyzeDocumentInput = {
+      textContent: input.textContent,
+      fileName: input.fileName
+    };
+    return analyzeDocumentFlowInternal(textProcessingInput);
+  } else {
+    throw new Error("Input inválido: é necessário fornecer fileDataUri ou textContent para a função analyzeDocument.");
   }
-  return analyzeDocumentFlowInternal(processedInput);
 }
 
 const analyzeDocumentPrompt = ai.definePrompt({
@@ -159,12 +187,12 @@ Certifique-se de que a saída JSON esteja completa e siga o schema definido. Se 
 
 const analyzeDocumentFlowInternal = ai.defineFlow(
   {
-    name: 'analyzeDocumentFlowInternal', // Renamed to avoid conflict with exported wrapper
-    inputSchema: AnalyzeDocumentInputSchema,
+    name: 'analyzeDocumentFlowInternal',
+    inputSchema: AnalyzeDocumentInputSchema, // Accepts either fileDataUri or textContent (optional fields)
     outputSchema: AnalyzeDocumentOutputSchema,
   },
-  async (input: AnalyzeDocumentInput) => { // Type is still AnalyzeDocumentInput, as pre-processing ensures it's valid for the prompt
-    const {output} = await analyzeDocumentPrompt(input);
+  async (input: AnalyzeDocumentInput) => { 
+    const {output} = await analyzeDocumentPrompt(input); // Pass the structured input
     if (!output) {
       throw new Error("A análise do documento não retornou um resultado válido.");
     }

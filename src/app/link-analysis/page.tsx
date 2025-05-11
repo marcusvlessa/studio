@@ -33,7 +33,7 @@ export default function LinkAnalysisPage() {
     const file = event.target.files?.[0];
     if (file) {
       const allowedExtensions = [".csv", ".txt", ".pdf", ".xls", ".xlsx", ".anb", ".anx"];
-      const fileExtensionSupported = allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext)) || file.type === "application/pdf" || file.type === "text/csv" || file.type === "text/plain";
+      const fileExtensionSupported = allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext)) || file.type === "application/pdf" || file.type === "text/csv" || file.type === "text/plain" || file.type === "application/vnd.ms-excel" || file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" || file.type === "application/octet-stream" ;
 
       if (fileExtensionSupported) {
         setSelectedFile(file);
@@ -41,7 +41,7 @@ export default function LinkAnalysisPage() {
         setProgress(0);
         toast({ title: "Arquivo Selecionado", description: file.name });
       } else {
-        toast({ variant: "destructive", title: "Tipo de Arquivo Inválido", description: `Por favor, envie um arquivo com uma das seguintes extensões: ${allowedExtensions.join(", ")} ou um tipo comum (PDF, CSV, TXT).` });
+        toast({ variant: "destructive", title: "Tipo de Arquivo Inválido", description: `Por favor, envie um arquivo com uma das seguintes extensões: ${allowedExtensions.join(", ")} ou um tipo comum (PDF, CSV, TXT, XLS, XLSX). Tipo detectado: ${file.type}` });
         setSelectedFile(null);
         if (fileInputRef.current) {
             fileInputRef.current.value = "";
@@ -155,7 +155,7 @@ export default function LinkAnalysisPage() {
                 const fileDataUri = e.target?.result as string;
                 if (!fileDataUri) {
                     toast({ variant: "destructive", title: "Erro ao Ler Arquivo", description: "Não foi possível ler o conteúdo do arquivo. Análise de vínculos não pode prosseguir."});
-                    reject(new Error("Erro ao ler arquivo: URI de dados vazia."));
+                    reject(new Error(`Erro ao ler arquivo ${selectedFile.name}: URI de dados vazia.`));
                     return;
                 }
                 setProgress(30);
@@ -178,25 +178,24 @@ export default function LinkAnalysisPage() {
                         actualTextExtracted = false;
                     }
                     resolve();
-                } catch (extractionError) {
-                    console.error("Erro na extração de texto:", extractionError);
-                    toast({ variant: "destructive", title: "Erro na Extração de Texto", description: (extractionError instanceof Error ? extractionError.message : "Falha ao extrair texto do arquivo com IA.") + " Análise de vínculos não pode prosseguir."});
+                } catch (extractionError: any) {
+                    console.error(`Erro na extração de texto de arquivo complexo: ${extractionError.message}`, extractionError);
+                    toast({ variant: "destructive", title: "Erro na Extração de Texto", description: (extractionError instanceof Error ? extractionError.message : `Falha ao extrair texto do arquivo ${selectedFile.name} com IA.`) + " Análise de vínculos não pode prosseguir."});
                     reject(extractionError);
                 }
             };
             reader.onerror = (errorEvent) => { 
                  toast({ variant: "destructive", title: "Erro ao Ler Arquivo", description: "Ocorreu um erro ao tentar ler o arquivo. Análise de vínculos não pode prosseguir."});
-                 reject(new Error(`Erro no leitor de arquivo ao processar ${selectedFile.name}. Detalhes: ${errorEvent.type}`));
+                 reject(new Error(`Erro no leitor de arquivo ao processar ${selectedFile.name}. Detalhes: ${errorEvent.type || 'desconhecido'}`));
             }
         });
       }
 
       if (!actualTextExtracted || !extractedTextForParsing) {
-        // Toasts for specific failures already shown above.
-        // This is a fallback or if previous logic didn't set isLoading to false.
-        if(actualTextExtracted && !extractedTextForParsing){ // If actualTextExtracted was true, but extractedText is empty
+        if(actualTextExtracted && !extractedTextForParsing){ 
              toast({ variant: "default", title: "Texto Extraído Vazio", description: "O texto extraído do arquivo está vazio. Análise de vínculos não pode prosseguir." });
         }
+        // Other toasts for specific failures would have been shown above.
         setIsLoading(false);
         setProgress(0);
         return;
@@ -226,12 +225,13 @@ export default function LinkAnalysisPage() {
         toast({ title: "Análise de Vínculos Concluída", description: "Nenhum vínculo direto foi encontrado para as entidades fornecidas." });
       }
 
-    } catch (error) { 
+    } catch (error: any) { 
       console.error("Erro na análise de vínculos:", error);
-      // Avoid generic toast if a more specific one was already shown
-      const errorMessagesToIgnore = ["Erro ao ler arquivo:", "Falha ao extrair texto", "URI de dados vazia"];
-      if (!(error instanceof Error && errorMessagesToIgnore.some(msg => error.message.includes(msg)))) {
-        toast({ variant: "destructive", title: "Falha Geral na Análise", description: (error instanceof Error ? error.message : "Ocorreu um erro desconhecido.") + " Análise de vínculos interrompida." });
+      const errorMessagesToIgnore = ["Erro ao ler arquivo", "Falha ao extrair texto", "URI de dados vazia"];
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      if (!errorMessagesToIgnore.some(msg => errorMessage.includes(msg))) {
+        toast({ variant: "destructive", title: "Falha Geral na Análise", description: errorMessage + " Análise de vínculos interrompida." });
       }
     } finally {
       setIsLoading(false); 
@@ -331,8 +331,8 @@ export default function LinkAnalysisPage() {
         <AlertDescription>
           <ul className="list-disc list-inside text-xs">
             <li>Para arquivos <strong>CSV/TXT</strong>: certifique-se que as entidades estão separadas por linha, vírgula, ponto e vírgula ou tabulação.</li>
-            <li>Arquivos <strong>PDF, XLS, XLSX, ANB, ANX</strong>: o texto será extraído automaticamente pela IA para identificar entidades. A qualidade da extração pode variar; arquivos não textuais ou muito complexos podem resultar em extração limitada.</li>
-            <li>Selecionar um <strong>Contexto da Análise</strong> pode ajudar a IA a identificar tipos de entidades e relações mais relevantes.</li>
+            <li>Arquivos <strong>PDF, XLS, XLSX, ANB, ANX, DOC, DOCX</strong>: o texto será extraído automaticamente pela IA para identificar entidades. A qualidade da extração pode variar; arquivos não textuais, muito complexos, ou com layouts incomuns podem resultar em extração limitada ou falha na extração. PDFs baseados em imagem ou PDFs textuais bem formatados tendem a ter melhores resultados.</li>
+            <li>Selecionar um <strong>Contexto da Análise</strong> pode ajudar a IA a identificar tipos de entidades e relações relevantes.</li>
           </ul>
         </AlertDescription>
       </Alert>

@@ -27,7 +27,7 @@ const AnalyzeDocumentInputSchema = z.object({
 export type AnalyzeDocumentInput = z.infer<typeof AnalyzeDocumentInputSchema>;
 
 const KeyEntitySchema = z.object({
-    type: z.string().describe('O tipo da entidade (ex: Pessoa, Organização, Local, Data, Valor Monetário).'),
+    type: z.string().describe('O tipo da entidade (ex: Pessoa, Organização, Local, Data, Valor Monetário, Nome de Arquivo, Tipo MIME).'),
     value: z.string().describe('O valor da entidade extraída.'),
 });
 
@@ -51,10 +51,10 @@ const DelegateAssessmentSchema = z.object({
 });
 
 const AnalyzeDocumentOutputSchema = z.object({
-  extractedText: z.string().optional().describe('O texto completo extraído do documento (ou o texto fornecido diretamente se textContent foi usado). Pode estar ausente se a extração falhar ou não for aplicável.'),
-  summary: z.string().describe('Um resumo conciso do conteúdo original do documento.'),
-  keyEntities: z.array(KeyEntitySchema).optional().describe('Uma lista de entidades chave (pessoas, organizações, locais, etc.) identificadas no texto original do documento.'),
-  language: z.string().optional().describe('O idioma principal detectado no documento (código ISO 639-1, ex: "pt", "en").'),
+  extractedText: z.string().optional().describe('O texto completo extraído do documento (ou o texto fornecido diretamente se textContent foi usado, ou uma mensagem do sistema se o processamento direto falhou). Pode estar ausente se a extração falhar ou não for aplicável.'),
+  summary: z.string().describe('Um resumo conciso do conteúdo original do documento ou, se o conteúdo não pôde ser lido, um resumo da situação (ex: impossibilidade de leitura de arquivo X).'),
+  keyEntities: z.array(KeyEntitySchema).optional().describe('Uma lista de entidades chave (pessoas, organizações, locais, etc., e também Nome de Arquivo, Tipo MIME se relevante) identificadas no texto original do documento ou nos metadados/mensagem do sistema.'),
+  language: z.string().optional().describe('O idioma principal detectado no documento (código ISO 639-1, ex: "pt", "en"). Pode ser "N/A" se não aplicável.'),
   
   investigatorAnalysis: InvestigatorAnalysisSchema.optional().describe("Análise detalhada sob a perspectiva de um Investigador de Polícia/Agente de Inteligência."),
   clerkReport: ClerkReportSchema.optional().describe("Relatório estruturado e formalizado sob a perspectiva de um Escrivão de Polícia."),
@@ -73,7 +73,7 @@ const DIRECTLY_PROCESSABLE_MIME_TYPES = [
   'image/png',
   'image/jpeg',
   'image/jpg',
-  'image/gif',
+  // 'image/gif', // GIF can be problematic for text extraction, consider removing if issues persist
   'image/webp',
   'application/pdf',
 ];
@@ -87,10 +87,9 @@ export async function analyzeDocument(input: AnalyzeDocumentInput): Promise<Anal
     let effectiveMimeTypeForCheck = originalMimeType ? originalMimeType.toLowerCase() : null;
     const isPdfByExtension = fileName.toLowerCase().endsWith('.pdf');
 
+    // If browser reports application/octet-stream for a .pdf file, override to application/pdf
     if (isPdfByExtension && (effectiveMimeTypeForCheck === 'application/octet-stream' || !effectiveMimeTypeForCheck)) {
       effectiveMimeTypeForCheck = 'application/pdf';
-      // Reconstruct data URI if original MIME type was generic but it's a PDF by extension
-      // This helps ensure Gemini receives 'application/pdf' as the MIME type for the media part.
       if (input.fileDataUri.includes(',')) {
         const base64Content = input.fileDataUri.substring(input.fileDataUri.indexOf(',') + 1);
         processedFileDataUri = `data:application/pdf;base64,${base64Content}`;
@@ -99,13 +98,13 @@ export async function analyzeDocument(input: AnalyzeDocumentInput): Promise<Anal
 
     if (effectiveMimeTypeForCheck && DIRECTLY_PROCESSABLE_MIME_TYPES.includes(effectiveMimeTypeForCheck)) {
       const fileProcessingInput: AnalyzeDocumentInput = {
-        fileDataUri: processedFileDataUri, // Use the (potentially reconstructed) data URI
+        fileDataUri: processedFileDataUri, 
         fileName: fileName,
       };
       return analyzeDocumentFlowInternal(fileProcessingInput);
     } else {
-      const detectedMimeTypeInfo = originalMimeType || (isPdfByExtension ? 'pdf (por extensão)' : 'não detectado');
-      const systemMessage = `AVISO DO SISTEMA: O arquivo '${fileName}' (tipo MIME: ${detectedMimeTypeInfo}) foi fornecido. Seu conteúdo binário não pode ser processado/extraído diretamente pela IA neste fluxo. A análise deve se concentrar no nome do arquivo, tipo MIME informado e na natureza deste aviso. Prossiga com a análise baseada nessas metainformações.`;
+      const detectedMimeTypeInfo = originalMimeType || (isPdfByExtension ? 'pdf (por extensão)' : 'desconhecido');
+      const systemMessage = `AVISO DO SISTEMA: O arquivo '${fileName}' (tipo MIME: ${detectedMimeTypeInfo}) foi fornecido. Seu conteúdo binário não pode ser processado/extraído diretamente pela IA neste fluxo. A análise subsequente deve se concentrar no nome do arquivo, tipo MIME informado e na natureza deste aviso. Tente extrair entidades do nome do arquivo e do tipo MIME.`;
       
       const textProcessingInput: AnalyzeDocumentInput = { 
         textContent: systemMessage, 
@@ -137,16 +136,22 @@ Conteúdo para Análise:
 {{{textContent}}}
 
 Instruções para IA com Conteúdo Textual/Metadados:
-O conteúdo acima pode ser:
+O 'Conteúdo para Análise' acima pode ser:
 1.  Texto extraído diretamente de um arquivo de texto.
-2.  Uma mensagem do sistema (começando com "AVISO DO SISTEMA:") indicando que um arquivo (ex: DOCX, XLS, ou tipo desconhecido como application/octet-stream) foi fornecido, mas seu conteúdo não pôde ser lido/processado diretamente pela IA. Neste caso, a análise deve se basear no nome do arquivo, tipo MIME (se informado no texto) e na natureza do aviso.
+2.  Uma mensagem do sistema (começando com "AVISO DO SISTEMA:") indicando que um arquivo (ex: DOCX, XLS, ou tipo desconhecido) foi fornecido, mas seu conteúdo não pôde ser lido/processado diretamente pela IA.
+   Neste caso (AVISO DO SISTEMA):
+   -   O campo 'extractedText' DEVE ser preenchido com este mesmo 'Conteúdo para Análise' (a mensagem do sistema).
+   -   O campo 'language' DEVE ser "N/A".
+   -   O campo 'summary' DEVE ser um resumo da situação: "Impossibilidade de análise direta do conteúdo do arquivo. Análise baseada em metadados como nome do arquivo e tipo MIME."
+   -   O campo 'keyEntities' DEVE conter entidades extraídas do nome do arquivo (ex: {{fileName}}) e do tipo MIME informado na mensagem do sistema. Tipos de entidade podem ser "Nome de Arquivo", "Tipo MIME".
+   -   As Fases 1, 2 e 3 devem focar na interpretação do nome do arquivo, tipo MIME e na implicação de tal arquivo existir no contexto de uma investigação.
 
-Prossiga com as Fases 1, 2 e 3, aplicando-as ao 'Conteúdo para Análise'.
-Na Fase 2 (Escrivão):
--   O campo 'extractedText' DEVE ser preenchido com este mesmo 'Conteúdo para Análise' (seja ele o texto original ou a mensagem do sistema).
--   O campo 'language' DEVE ser detectado a partir deste 'Conteúdo para Análise', se aplicável (pode não ser aplicável para mensagens do sistema, nesse caso pode retornar "N/A" ou omitir).
--   O campo 'summary' e 'keyEntities' DEVEM ser gerados a partir deste 'Conteúdo para Análise', interpretando-o da melhor forma possível. Se for uma mensagem do sistema, o resumo deve ser sobre a impossibilidade de análise do conteúdo do arquivo e focar nos metadados disponíveis. As entidades também devem ser extraídas do texto fornecido (que pode ser a mensagem do sistema).
--   Os demais campos do 'clerkReport' DEVEM ser gerados a partir deste 'Conteúdo para Análise'.
+Para texto extraído diretamente (não "AVISO DO SISTEMA"):
+-   O campo 'extractedText' DEVE ser o 'Conteúdo para Análise'.
+-   Detecte 'language'.
+-   Gere 'summary' e 'keyEntities' a partir do texto.
+-   Prossiga com as Fases 1, 2 e 3 aplicadas ao texto.
+
 {{else}}
 **Análise de Arquivo (Imagem ou PDF Processável Diretamente):**
 Documento para análise ({{#if fileName}}Nome: {{fileName}}{{else}}Sem nome{{/if}}):
@@ -162,24 +167,24 @@ Na Fase 2 (Escrivão):
 -   **Informações Chave Estruturadas para Relatório Policial**: Categorize e detalhe as informações chave extraídas do documento (texto extraído). Preencha o campo 'clerkReport.keyInformationStructured'.
 {{/if}}
 
-Siga rigorosamente as fases e instruções abaixo, aplicando-as ao conteúdo disponível (seja ele 'Conteúdo para Análise' ou o texto extraído de 'fileDataUri'):
+Siga rigorosamente as fases e instruções abaixo, aplicando-as ao conteúdo disponível (seja ele texto extraído de 'fileDataUri', 'Conteúdo para Análise', ou metadados de um arquivo não processável):
 
 **Fase 1: Análise Investigativa (Perspectiva: Investigador de Polícia / Agente de Inteligência)**
 Como Investigador, seu foco é a análise profunda e minuciosa do material disponível em busca de elementos relevantes para uma investigação.
--   **Observações do Investigador**: Descreva suas observações detalhadas. Identifique pistas (mesmo sutis), inconsistências, informações suspeitas, modus operandi, possíveis motivações, conexões não óbvias entre fatos ou pessoas, e qualquer outro elemento que possa ser crucial para elucidar um fato criminoso ou de interesse para a inteligência. Seja perspicaz e detalhista.
+-   **Observações do Investigador**: Descreva suas observações detalhadas. Identifique pistas (mesmo sutis), inconsistências, informações suspeitas, modus operandi, possíveis motivações, conexões não óbvias entre fatos ou pessoas, e qualquer outro elemento que possa ser crucial para elucidar um fato criminoso ou de interesse para a inteligência. Seja perspicaz e detalhista. Se estiver analisando apenas metadados de um arquivo não processável, foque no que a existência desse arquivo, seu nome e tipo podem significar.
 -   **Pistas Potenciais**: Com base em suas observações, liste objetivamente as pistas concretas ou linhas de investigação potenciais que surgem da análise.
 
 **Fase 2: Formalização e Extração (Perspectiva: Escrivão de Polícia)**
-(As instruções específicas para extração de texto, idioma, resumo e entidades já foram dadas acima, dependendo se 'Conteúdo para Análise' ou 'fileDataUri' foi usado. As instruções abaixo aplicam-se ao texto resultante/disponível.)
+(As instruções específicas para 'extractedText', 'language', 'summary', 'keyEntities' já foram dadas acima, dependendo se 'Conteúdo para Análise' ou 'fileDataUri' foi usado. As instruções abaixo aplicam-se ao texto/material resultante/disponível.)
 Como Escrivão, sua tarefa é processar o material de forma técnica e registrar as informações de maneira estruturada.
--   **Sumário Formalizado dos Fatos (Estilo Boletim de Ocorrência)**: Com base no material, elabore um resumo formalizado e objetivo dos fatos e informações cruciais, como se estivesse redigindo a seção "Histórico" de um boletim de ocorrência ou um relatório policial inicial. Foco nos fatos, datas, locais e envolvidos. Coloque no campo 'clerkReport.formalizedSummary'.
--   **Informações Chave Estruturadas para Relatório Policial**: Categorize e detalhe as informações chave extraídas do material que seriam essenciais para um relatório policial. Use categorias como: "Envolvido(s)", "Vítima(s)", "Suspeito(s)", "Data do Fato", "Horário Aproximado", "Local do Fato", "Objeto(s) Apreendido(s)/Relevante(s)", "Veículo(s) Envolvido(s)", "Testemunha(s) Potenciais", "Modus Operandi Descrito". Preencha o campo 'clerkReport.keyInformationStructured'.
+-   **Sumário Formalizado dos Fatos (Estilo Boletim de Ocorrência)**: Com base no material (texto extraído ou metadados do arquivo), elabore um resumo formalizado e objetivo dos fatos e informações cruciais, como se estivesse redigindo a seção "Histórico" de um boletim de ocorrência ou um relatório policial inicial. Foco nos fatos, datas, locais e envolvidos. Se for baseado em metadados, descreva a natureza do arquivo e sua relevância hipotética. Coloque no campo 'clerkReport.formalizedSummary'.
+-   **Informações Chave Estruturadas para Relatório Policial**: Categorize e detalhe as informações chave extraídas do material que seriam essenciais para um relatório policial. Use categorias como: "Envolvido(s)", "Vítima(s)", "Suspeito(s)", "Data do Fato", "Horário Aproximado", "Local do Fato", "Objeto(s) Apreendido(s)/Relevante(s)", "Veículo(s) Envolvido(s)", "Testemunha(s) Potenciais", "Modus Operandi Descrito", "Nome do Arquivo", "Tipo de Arquivo". Preencha o campo 'clerkReport.keyInformationStructured'.
 
 **Fase 3: Avaliação e Direcionamento (Perspectiva: Delegado de Polícia)**
 Como Delegado, com base nas análises e extrações das fases anteriores, forneça uma avaliação qualificada e direcione os próximos passos.
 -   **Avaliação Geral do Delegado**: Forneça uma avaliação preliminar da situação ou do possível ilícito/fato descrito ou implicado pelo material. Considere a natureza do fato, gravidade aparente, urgência, e possíveis implicações. Coloque no campo 'delegateAssessment.overallAssessment'.
 -   **Ações Sugeridas pelo Delegado**: Com base na sua avaliação, liste as próximas diligências investigativas, providências ou ações que você, como autoridade policial, recomendaria (ex: "Instaurar Inquérito Policial", "Registrar Boletim de Ocorrência", "Ouvir formalmente as partes mencionadas", "Solicitar imagens de câmeras de segurança", "Realizar busca e apreensão mediante autorização judicial", "Requisitar perícia no material X", "Verificar antecedentes criminais dos envolvidos", "Encaminhar para mediação/delegacia especializada"). Coloque no campo 'delegateAssessment.suggestedActions'.
--   **Considerações Legais Preliminares do Delegado**: Mencione, se possível, considerações legales preliminares, como possíveis enquadramentos penais (tipificações criminais) que podem estar relacionados aos fatos, ou outras implicações jurídicas relevantes. (Ex: "Os fatos, em tese, podem configurar o crime de Estelionato (Art. 171, CP)", "Necessário apurar possível crime de Ameaça (Art. 147, CP)", "Verificar se há incidência da Lei Maria da Penha"). Coloque no campo 'delegateAssessment.legalConsiderations'.
+-   **Considerações Legais Preliminares do Delegado**: Mencione, if possível, considerações legales preliminares, como possíveis enquadramentos penais (tipificações criminais) que podem estar relacionados aos fatos, ou outras implicações jurídicas relevantes. (Ex: "Os fatos, em tese, podem configurar o crime de Estelionato (Art. 171, CP)", "Necessário apurar possível crime de Ameaça (Art. 147, CP)", "Verificar se há incidência da Lei Maria da Penha"). Coloque no campo 'delegateAssessment.legalConsiderations'.
 
 Certifique-se de que a saída JSON esteja completa e siga o schema definido. Se alguma informação específica não puder ser extraída ou inferida, deixe o campo correspondente vazio ou omita-o se for opcional, mas tente ser o mais completo possível.
 `,
@@ -188,14 +193,15 @@ Certifique-se de que a saída JSON esteja completa e siga o schema definido. Se 
 const analyzeDocumentFlowInternal = ai.defineFlow(
   {
     name: 'analyzeDocumentFlowInternal',
-    inputSchema: AnalyzeDocumentInputSchema, // Accepts either fileDataUri or textContent (optional fields)
+    inputSchema: AnalyzeDocumentInputSchema, 
     outputSchema: AnalyzeDocumentOutputSchema,
   },
   async (input: AnalyzeDocumentInput) => { 
-    const {output} = await analyzeDocumentPrompt(input); // Pass the structured input
+    const {output} = await analyzeDocumentPrompt(input); 
     if (!output) {
       throw new Error("A análise do documento não retornou um resultado válido.");
     }
     return output;
   }
 );
+

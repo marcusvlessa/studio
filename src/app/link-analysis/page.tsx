@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, type ChangeEvent, useRef } from "react";
@@ -52,17 +51,25 @@ export default function LinkAnalysisPage() {
 
   const parseEntitiesFromText = (text: string): string[] => {
     const entities = new Set<string>();
+    // If text is a system warning, or empty, return no entities from this parser.
+    // The findEntityRelationships might still get something if AI extracts from filename via analyzeDocument's keyEntities.
     if (!text || text.trim() === "" || text.startsWith("AVISO DO SISTEMA:")) {
       return [];
     }
     const lines = text.split(/\r?\n/);
 
-    const phonePattern = /^(?:\+55\s?)?(?:\(?\d{2}\)?\s?)?\d{4,5}-?\d{4}$/;
+    // Enhanced patterns
+    const phonePattern = /^(?:\+55\s?)?(?:\(?\d{2}\)?\s?)?(?:9\s?)?\d{4,5}-?\d{4}$/; // Brazilian phone
     const imeiPattern = /^\d{15}$/; 
     const ipPattern = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/; 
-    const emailPattern = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    const emailPattern = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/i;
     const plateOldPattern = /^[A-Z]{3}-?\d{4}$/i;
     const plateMercosulPattern = /^[A-Z]{3}\d[A-Z]\d{2}$/i;
+    const cpfPattern = /^\d{3}\.\d{3}\.\d{3}-\d{2}$/;
+    const cnpjPattern = /^\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}$/;
+    // Simple currency (could be improved for more formats)
+    const moneyPattern = /(?:R\$|\$|€|£)\s*\d+(?:[,.]\d{1,2})*/;
+
 
     lines.forEach(line => {
       const trimmedLine = line.trim();
@@ -83,28 +90,41 @@ export default function LinkAnalysisPage() {
 
       cells.forEach(cell => {
         if (!cell) return;
+        const cleanedCell = cell.replace(/^["']|["']$/g, ''); // Remove surrounding quotes
 
         let matchedSpecific = false;
-        if (phonePattern.test(cell)) {
-          entities.add(cell);
+        if (phonePattern.test(cleanedCell)) {
+          entities.add(cleanedCell);
           matchedSpecific = true;
-        } else if (imeiPattern.test(cell)) {
-          entities.add(cell);
+        } else if (imeiPattern.test(cleanedCell)) {
+          entities.add(cleanedCell);
           matchedSpecific = true;
-        } else if (ipPattern.test(cell)) {
-          entities.add(cell);
+        } else if (ipPattern.test(cleanedCell)) {
+          entities.add(cleanedCell);
           matchedSpecific = true;
-        } else if (emailPattern.test(cell)) {
-          entities.add(cell);
+        } else if (emailPattern.test(cleanedCell)) {
+          entities.add(cleanedCell.toLowerCase());
           matchedSpecific = true;
-        } else if (plateOldPattern.test(cell) || plateMercosulPattern.test(cell)) {
-          entities.add(cell.toUpperCase()); 
+        } else if (plateOldPattern.test(cleanedCell) || plateMercosulPattern.test(cleanedCell)) {
+          entities.add(cleanedCell.toUpperCase()); 
           matchedSpecific = true;
+        } else if (cpfPattern.test(cleanedCell)) {
+            entities.add(cleanedCell);
+            matchedSpecific = true;
+        } else if (cnpjPattern.test(cleanedCell)) {
+            entities.add(cleanedCell);
+            matchedSpecific = true;
+        } else if (moneyPattern.test(cleanedCell)) {
+             // Extract just the monetary value part if needed, or add the whole cell
+            entities.add(cleanedCell); 
+            matchedSpecific = true;
         }
         
+        // General entity: if not specifically matched, and looks like a name/word/code
         if (!matchedSpecific) {
-          if (cell.length >= 2 && cell.length < 100 && !/^\W+$/.test(cell) && (isNaN(Number(cell)) || cell.length > 4)) {
-            entities.add(cell);
+          if (cleanedCell.length >= 2 && cleanedCell.length < 100 && !/^\W+$/.test(cleanedCell) && (isNaN(Number(cleanedCell)) || cleanedCell.length > 4 || /^[a-zA-Z0-9\s-]+$/.test(cleanedCell) )) {
+            // Allow alphanumeric with spaces/hyphens, avoid purely numeric short strings unless long.
+            entities.add(cleanedCell);
           }
         }
       });
@@ -125,8 +145,9 @@ export default function LinkAnalysisPage() {
     setProcessingMessage("Iniciando análise...");
     setRelationships(null);
 
-    let extractedTextForParsing = "";
-    let actualTextExtracted = false;
+    let extractedTextForParsing = ""; // This will hold text from TXT/CSV or the output of analyzeDocument
+    let successfullyExtractedActualContent = false; // True if real content was extracted (not just a system message)
+    let entitiesFromAI: string[] = []; // For entities potentially extracted by analyzeDocument (e.g., from metadata)
 
     try {
       if (selectedFile.type === "text/csv" || selectedFile.type === "text/plain" || selectedFile.name.toLowerCase().endsWith(".txt") || selectedFile.name.toLowerCase().endsWith(".csv")) {
@@ -134,18 +155,18 @@ export default function LinkAnalysisPage() {
         setProcessingMessage(`Lendo arquivo de texto: ${selectedFile.name}...`);
         try {
             extractedTextForParsing = await selectedFile.text();
-            actualTextExtracted = true;
+            successfullyExtractedActualContent = true; // Real text content read
             toast({ title: "Leitura de Texto Concluída", description: `Conteúdo de ${selectedFile.name} lido.` });
         } catch (textReadError) {
             console.error("Erro ao ler arquivo de texto:", textReadError);
-            toast({ variant: "destructive", title: "Erro ao Ler Arquivo de Texto", description: `Não foi possível ler o conteúdo do arquivo ${selectedFile.name}. Análise de vínculos não pode prosseguir.` });
+            toast({ variant: "destructive", title: "Erro ao Ler Arquivo de Texto", description: `Não foi possível ler o conteúdo do arquivo ${selectedFile.name}.` });
             setIsLoading(false); 
             setProgress(0);
             return; 
         }
       } else { 
         setProgress(10);
-        setProcessingMessage(`Preparando arquivo ${selectedFile.name} para extração de texto...`);
+        setProcessingMessage(`Preparando arquivo ${selectedFile.name} para análise pela IA...`);
         
         const reader = new FileReader();
         reader.readAsDataURL(selectedFile);
@@ -154,84 +175,96 @@ export default function LinkAnalysisPage() {
             reader.onloadend = async (e) => {
                 const fileDataUri = e.target?.result as string;
                 if (!fileDataUri) {
-                    toast({ variant: "destructive", title: "Erro ao Ler Arquivo", description: "Não foi possível ler o conteúdo do arquivo. Análise de vínculos não pode prosseguir."});
+                    toast({ variant: "destructive", title: "Erro ao Ler Arquivo", description: "Não foi possível ler o conteúdo do arquivo."});
                     reject(new Error(`Erro ao ler arquivo ${selectedFile.name}: URI de dados vazia.`));
                     return;
                 }
                 setProgress(30);
-                setProcessingMessage("Extraindo texto do arquivo com IA (pode levar um momento)...");
+                setProcessingMessage("Processando arquivo com IA (pode levar um momento)...");
                 try {
                     const docInput: AnalyzeDocumentInput = { fileDataUri, fileName: selectedFile.name };
                     const docResult = await analyzeDocument(docInput); 
                     
-                    if (docResult.extractedText && docResult.extractedText.length > 0) {
-                        if (docResult.extractedText.startsWith("AVISO DO SISTEMA:")) {
-                           toast({ variant: "default", title: "Extração de Texto Limitada", description: `Conteúdo de ${selectedFile.name} não pôde ser lido diretamente pela IA. A análise de vínculos não será realizada para este arquivo.` });
-                           actualTextExtracted = false; 
-                        } else {
-                           extractedTextForParsing = docResult.extractedText;
-                           actualTextExtracted = true;
-                           toast({ title: "Extração de Texto Concluída", description: `Texto extraído de ${selectedFile.name} para análise de entidades.` });
-                        }
+                    extractedTextForParsing = docResult.extractedText || ""; // Use extracted text or empty string
+
+                    if (docResult.extractedText && !docResult.extractedText.startsWith("AVISO DO SISTEMA:")) {
+                        successfullyExtractedActualContent = true;
+                        toast({ title: "Extração de Texto do Arquivo Concluída", description: `Texto extraído de ${selectedFile.name}.` });
                     } else {
-                        toast({ variant: "default", title: "Extração de Texto Falhou", description: `Não foi possível extrair texto de ${selectedFile.name} ou o arquivo está vazio. Análise de vínculos não pode prosseguir.` });
-                        actualTextExtracted = false;
+                        // This means it's a system warning or empty text from AI
+                        successfullyExtractedActualContent = false; 
+                        toast({ variant: "default", title: "Extração de Conteúdo do Arquivo Limitada", description: `O conteúdo de '${selectedFile.name}' (${selectedFile.type}) não pôde ser lido/extraído diretamente pela IA. A análise prosseguirá com base em metadados (como nome do arquivo), se possível.` });
+                    }
+                    
+                    if(docResult.keyEntities && docResult.keyEntities.length > 0){
+                        entitiesFromAI = docResult.keyEntities.map(ke => ke.value);
+                        if(!successfullyExtractedActualContent){ // If only metadata entities were found
+                             toast({title: "Entidades de Metadados", description: `IA identificou ${entitiesFromAI.length} entidades (provavelmente do nome do arquivo ou metadados).`});
+                        }
                     }
                     resolve();
                 } catch (extractionError: any) {
-                    console.error(`Erro na extração de texto de arquivo complexo: ${extractionError.message}`, extractionError);
-                    toast({ variant: "destructive", title: "Erro na Extração de Texto", description: (extractionError instanceof Error ? extractionError.message : `Falha ao extrair texto do arquivo ${selectedFile.name} com IA.`) + " Análise de vínculos não pode prosseguir."});
-                    reject(extractionError);
+                    console.error(`Erro na análise do documento pela IA: ${extractionError.message}`, extractionError);
+                    toast({ variant: "destructive", title: "Erro na Análise do Documento pela IA", description: (extractionError instanceof Error ? extractionError.message : `Falha ao processar o arquivo ${selectedFile.name} com IA.`) });
+                    reject(extractionError); // This will be caught by the outer catch
                 }
             };
             reader.onerror = (errorEvent) => { 
-                 toast({ variant: "destructive", title: "Erro ao Ler Arquivo", description: "Ocorreu um erro ao tentar ler o arquivo. Análise de vínculos não pode prosseguir."});
-                 reject(new Error(`Erro no leitor de arquivo ao processar ${selectedFile.name}. Detalhes: ${errorEvent.type || 'desconhecido'}`));
+                 toast({ variant: "destructive", title: "Erro ao Ler Arquivo", description: "Ocorreu um erro ao tentar ler o arquivo."});
+                 reject(new Error(`Erro no leitor de arquivo ao processar ${selectedFile.name}.`));
             }
         });
       }
 
-      if (!actualTextExtracted || !extractedTextForParsing) {
-        if(actualTextExtracted && !extractedTextForParsing){ 
-             toast({ variant: "default", title: "Texto Extraído Vazio", description: "O texto extraído do arquivo está vazio. Análise de vínculos não pode prosseguir." });
-        }
-        // Other toasts for specific failures would have been shown above.
-        setIsLoading(false);
-        setProgress(0);
-        return;
+      // Proceed to entity parsing from extractedTextForParsing (which might be real text or system warning)
+      setProgress(50);
+      setProcessingMessage("Identificando entidades do texto/metadados...");
+      
+      let entitiesFromTextParsing: string[] = [];
+      if (successfullyExtractedActualContent && extractedTextForParsing) {
+          entitiesFromTextParsing = parseEntitiesFromText(extractedTextForParsing);
       }
 
-      setProgress(50);
-      setProcessingMessage("Extraindo entidades do texto processado...");
-      const entities = parseEntitiesFromText(extractedTextForParsing);
+      // Combine entities from text parsing (if any) and from AI metadata extraction (if any)
+      const combinedEntities = new Set([...entitiesFromTextParsing, ...entitiesFromAI]);
+      const finalEntities = Array.from(combinedEntities);
       
-      if (entities.length === 0) {
-        toast({ variant: "default", title: "Nenhuma Entidade Válida Encontrada", description: "Não foi possível extrair entidades válidas do texto do arquivo para análise de vínculos." });
-        setIsLoading(false);
-        setProgress(0);
-        return;
+      if (finalEntities.length > 0) {
+          let entitiesSourceMessage = "";
+          if (entitiesFromTextParsing.length > 0 && entitiesFromAI.length > 0 && successfullyExtractedActualContent) {
+              entitiesSourceMessage = `Combinando ${entitiesFromTextParsing.length} do conteúdo e ${entitiesFromAI.length - entitiesFromTextParsing.filter(e => entitiesFromAI.includes(e)).length} de metadados.`;
+          } else if (entitiesFromTextParsing.length > 0 && successfullyExtractedActualContent) {
+              entitiesSourceMessage = `Extraídas do conteúdo do arquivo.`;
+          } else if (entitiesFromAI.length > 0) {
+              entitiesSourceMessage = `Extraídas de metadados do arquivo.`;
+          }
+          toast({ title: "Entidades Identificadas", description: `Total de ${finalEntities.length} entidades. ${entitiesSourceMessage}` });
+      } else {
+          // No entities found from any source
+          toast({ variant: "default", title: "Nenhuma Entidade Identificada", description: `Não foram identificadas entidades em '${selectedFile.name}'. A análise de vínculos pode não encontrar resultados.` });
       }
       
       setProgress(70);
-      setProcessingMessage(`Analisando ${entities.length} entidades com IA (Contexto: ${analysisContext})...`);
-      const input: FindEntityRelationshipsInput = { entities, analysisContext };
-      const result = await findEntityRelationships(input);
+      setProcessingMessage(finalEntities.length > 0 ? `Analisando ${finalEntities.length} entidades com IA (Contexto: ${analysisContext})...` : `Tentando análise de vínculos (sem entidades primárias identificadas)...`);
+      
+      const relationshipInput: FindEntityRelationshipsInput = { entities: finalEntities, analysisContext };
+      const result = await findEntityRelationships(relationshipInput);
       setRelationships(result.relationships);
       setProgress(100);
 
       if (result.relationships && result.relationships.length > 0) {
         toast({ title: "Análise de Vínculos Concluída", description: `Foram encontrados ${result.relationships.length} vínculos potenciais.` });
-      } else {
+      } else if (finalEntities.length > 0) {
         toast({ title: "Análise de Vínculos Concluída", description: "Nenhum vínculo direto foi encontrado para as entidades fornecidas." });
+      } else { 
+        toast({ title: "Análise Concluída", description: "Não foram encontradas entidades e, consequentemente, nenhum vínculo." });
       }
 
     } catch (error: any) { 
       console.error("Erro na análise de vínculos:", error);
-      const errorMessagesToIgnore = ["Erro ao ler arquivo", "Falha ao extrair texto", "URI de dados vazia"];
-      const errorMessage = error instanceof Error ? error.message : String(error);
-
-      if (!errorMessagesToIgnore.some(msg => errorMessage.includes(msg))) {
-        toast({ variant: "destructive", title: "Falha Geral na Análise", description: errorMessage + " Análise de vínculos interrompida." });
+      // Avoid redundant toasts if specific error already shown
+      if (!toast.toasts.some(t => t.title === "Erro ao Ler Arquivo de Texto" || t.title === "Erro ao Ler Arquivo" || t.title === "Erro na Análise do Documento pela IA")) {
+        toast({ variant: "destructive", title: "Falha na Análise de Vínculos", description: error instanceof Error ? error.message : "Ocorreu um erro desconhecido." });
       }
     } finally {
       setIsLoading(false); 
@@ -390,7 +423,7 @@ export default function LinkAnalysisPage() {
             <CardContent className="p-6 flex flex-col items-center justify-center min-h-[200px]">
                 <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
                 <p className="text-muted-foreground text-center">Nenhum vínculo direto encontrado para as entidades fornecidas no arquivo.</p>
-                <p className="text-xs text-muted-foreground mt-1 text-center">Verifique se o arquivo está formatado corretamente e contém dados válidos, ou se o conteúdo textual extraído foi suficiente.</p>
+                <p className="text-xs text-muted-foreground mt-1 text-center">Verifique se o arquivo está formatado corretamente e contém dados válidos, ou se o conteúdo textual/metadados extraído foi suficiente.</p>
             </CardContent>
         </Card>
       )}

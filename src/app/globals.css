@@ -105,7 +105,6 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
-    /* Removed specific font-family to allow Geist from layout.tsx to apply */
+    @apply font-sans bg-background text-foreground; /* Use Tailwind's font-sans utility */
   }
 }

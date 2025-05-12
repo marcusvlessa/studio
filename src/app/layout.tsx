@@ -26,8 +26,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}> {/* Use Tailwind's font-sans utility */}
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
+      <body className="font-sans antialiased"> {/* Use Tailwind's font-sans utility which picks up the CSS variables */}
         <AppLayout>
           {children}
         </AppLayout>

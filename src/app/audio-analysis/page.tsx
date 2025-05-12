@@ -1,15 +1,16 @@
 "use client";
 
-import { useState, type ChangeEvent, useRef } from "react";
+import { useState, type ChangeEvent, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { Mic, FileAudio, RotateCcw, Loader2, List, AlertCircle, CheckCircle, Files } from "lucide-react";
+import { Mic, FileAudio, RotateCcw, Loader2, List, AlertCircle, CheckCircle, Files, Combine, BookText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { transcribeAudio, type TranscribeAudioInput, type TranscribeAudioOutput } from "@/ai/flows/transcribe-audio";
+import { consolidateAudioAnalyses, type ConsolidateAudioAnalysesInput, type ConsolidateAudioAnalysesOutput } from "@/ai/flows/consolidate-audio-analyses-flow";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -27,8 +28,21 @@ interface AudioFileResult {
 export default function AudioAnalysisPage() {
   const [audioFileResults, setAudioFileResults] = useState<AudioFileResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isConsolidating, setIsConsolidating] = useState(false);
+  const [consolidatedReport, setConsolidatedReport] = useState<string | null>(null);
+  const [caseContext, setCaseContext] = useState(""); 
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const allFilesAnalyzed = audioFileResults.length > 0 && audioFileResults.every(f => f.status === "completed" || f.status === "failed");
+  const atLeastOneSuccess = audioFileResults.some(f => f.status === "completed" && f.output);
+
+  useEffect(() => {
+    // Clear consolidated report if file list changes significantly (e.g., all removed or new ones added)
+    if (audioFileResults.length === 0 && consolidatedReport) {
+      setConsolidatedReport(null);
+    }
+  }, [audioFileResults, consolidatedReport]);
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -48,7 +62,6 @@ export default function AudioAnalysisPage() {
       
       setAudioFileResults(prevResults => {
         const allFiles = [...prevResults, ...newAudioFiles];
-        // Remove duplicates based on name and size
         const uniqueFiles = allFiles.filter((fileResult, index, self) =>
           index === self.findIndex((f) => (
             f.file.name === fileResult.file.name && f.file.size === fileResult.file.size
@@ -59,8 +72,8 @@ export default function AudioAnalysisPage() {
       
       if (newAudioFiles.length > 0) {
         toast({ title: `${newAudioFiles.length} Arquivo(s) de Áudio Selecionado(s)`, description: "Pronto para análise." });
+        setConsolidatedReport(null); 
       }
-       // Clear the input value to allow selecting the same file(s) again after removal/reset
        if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
@@ -79,6 +92,7 @@ export default function AudioAnalysisPage() {
     }
 
     setIsProcessing(true);
+    setConsolidatedReport(null); 
     toast({ title: "Iniciando Análise em Lote", description: `Processando ${filesToProcess.length} arquivo(s) de áudio.` });
 
     for (const audioFile of filesToProcess) {
@@ -112,9 +126,63 @@ export default function AudioAnalysisPage() {
     toast({ title: "Processamento em Lote Concluído", description: "Todos os arquivos pendentes foram processados." });
   };
 
+  const handleConsolidateReports = async () => {
+    const successfulAnalyses = audioFileResults.filter(
+      (f) => f.status === "completed" && f.output
+    );
+
+    if (successfulAnalyses.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "Nenhuma Análise Bem-Sucedida",
+        description: "Não há relatórios de áudio para consolidar.",
+      });
+      return;
+    }
+
+    setIsConsolidating(true);
+    setConsolidatedReport(null);
+    toast({
+      title: "Iniciando Consolidação de Relatórios",
+      description: `Consolidando ${successfulAnalyses.length} análise(s) de áudio. Isso pode levar alguns instantes.`,
+    });
+
+    try {
+      const input: ConsolidateAudioAnalysesInput = {
+        analyses: successfulAnalyses.map((f) => ({
+          fileName: f.file.name,
+          transcript: f.output!.transcript,
+          report: f.output!.report,
+        })),
+        caseContext: caseContext || undefined,
+      };
+
+      const result = await consolidateAudioAnalyses(input);
+      setConsolidatedReport(result.consolidatedReport);
+      toast({
+        title: "Relatório Consolidado Gerado",
+        description: "O relatório consolidado dos áudios foi gerado com sucesso.",
+      });
+    } catch (error: any) {
+      console.error("Erro na consolidação dos relatórios:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "Ocorreu um erro desconhecido durante a consolidação.";
+      toast({
+        variant: "destructive",
+        title: "Falha na Consolidação",
+        description: errorMessage,
+      });
+    } finally {
+      setIsConsolidating(false);
+    }
+  };
+
   const handleReset = () => {
     setAudioFileResults([]);
     setIsProcessing(false);
+    setIsConsolidating(false);
+    setConsolidatedReport(null);
+    setCaseContext("");
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -131,7 +199,7 @@ export default function AudioAnalysisPage() {
     <div className="flex flex-col gap-6">
       <header className="mb-4">
         <h1 className="text-3xl font-bold tracking-tight">Transcrição e Análise de Áudios Investigativa</h1>
-        <p className="text-muted-foreground">Envie múltiplos arquivos de áudio para transcrição, identificação de interlocutores e geração de relatórios de investigação criminal.</p>
+        <p className="text-muted-foreground">Envie múltiplos arquivos de áudio para transcrição, identificação de interlocutores e geração de relatórios de investigação criminal, incluindo um relatório consolidado.</p>
       </header>
 
       <Card>
@@ -142,7 +210,7 @@ export default function AudioAnalysisPage() {
         <CardContent className="space-y-4">
           <div className="grid w-full max-w-sm items-center gap-1.5">
             <Label htmlFor="audio-upload">Arquivos de Áudio</Label>
-            <Input id="audio-upload" type="file" accept="audio/*" multiple onChange={handleFileChange} ref={fileInputRef} disabled={isProcessing} />
+            <Input id="audio-upload" type="file" accept="audio/*" multiple onChange={handleFileChange} ref={fileInputRef} disabled={isProcessing || isConsolidating} />
           </div>
           
           {audioFileResults.length > 0 && (
@@ -156,12 +224,12 @@ export default function AudioAnalysisPage() {
                         <FileAudio className="h-4 w-4 shrink-0" />
                         <span className="truncate" title={af.file.name}>{af.file.name} ({(af.file.size / (1024 * 1024)).toFixed(2)} MB)</span>
                         {af.status === "pending" && <Badge variant="outline">Pendente</Badge>}
-                        {af.status === "reading" && <Badge variant="secondary">Lendo...</Badge>}
-                        {af.status === "analyzing" && <Badge variant="secondary">Analisando...</Badge>}
+                        {af.status === "reading" && <Badge variant="secondary" className="animate-pulse">Lendo...</Badge>}
+                        {af.status === "analyzing" && <Badge variant="secondary" className="animate-pulse">Analisando...</Badge>}
                         {af.status === "completed" && <Badge variant="default" className="bg-green-500 hover:bg-green-600"><CheckCircle className="mr-1 h-3 w-3"/>Concluído</Badge>}
                         {af.status === "failed" && <Badge variant="destructive"><AlertCircle className="mr-1 h-3 w-3"/>Falha</Badge>}
                       </div>
-                       <Button variant="ghost" size="sm" onClick={() => removeFile(af.id)} disabled={isProcessing && af.status === 'analyzing'} className="shrink-0">
+                       <Button variant="ghost" size="sm" onClick={() => removeFile(af.id)} disabled={(isProcessing && af.status === 'analyzing') || isConsolidating} className="shrink-0">
                         <RotateCcw className="h-3 w-3" />
                       </Button>
                     </li>
@@ -184,12 +252,12 @@ export default function AudioAnalysisPage() {
           )}
 
         </CardContent>
-        <CardFooter className="gap-2">
-          <Button onClick={handleAnalyzeAll} disabled={audioFileResults.filter(f=> f.status === 'pending' || f.status === 'failed').length === 0 || isProcessing}>
+        <CardFooter className="flex flex-wrap gap-2">
+          <Button onClick={handleAnalyzeAll} disabled={audioFileResults.filter(f=> f.status === 'pending' || f.status === 'failed').length === 0 || isProcessing || isConsolidating}>
             {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Files className="mr-2 h-4 w-4" />}
             {isProcessing ? "Analisando Áudios..." : `Analisar ${audioFileResults.filter(f=> f.status === 'pending' || f.status === 'failed').length} Áudio(s)`}
           </Button>
-          <Button variant="outline" onClick={handleReset} disabled={isProcessing}>
+          <Button variant="outline" onClick={handleReset} disabled={isProcessing || isConsolidating}>
             <RotateCcw className="mr-2 h-4 w-4" /> Reiniciar Tudo
           </Button>
         </CardFooter>
@@ -245,6 +313,48 @@ export default function AudioAnalysisPage() {
             </CardContent>
         </Card>
       )}
+
+      {allFilesAnalyzed && atLeastOneSuccess && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><Combine className="h-6 w-6 text-primary"/>Consolidação de Relatórios</CardTitle>
+            <CardDescription>Gere um relatório unificado a partir de todas as análises de áudio bem-sucedidas.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <Label htmlFor="case-context">Contexto do Caso (Opcional)</Label>
+              <Textarea
+                id="case-context"
+                value={caseContext}
+                onChange={(e) => setCaseContext(e.target.value)}
+                placeholder="Forneça um breve contexto sobre o caso para ajudar na consolidação..."
+                rows={3}
+                disabled={isConsolidating || isProcessing}
+              />
+            </div>
+          </CardContent>
+          <CardFooter>
+            <Button onClick={handleConsolidateReports} disabled={isConsolidating || isProcessing || !atLeastOneSuccess}>
+              {isConsolidating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BookText className="mr-2 h-4 w-4"/>}
+              {isConsolidating ? "Consolidando Relatórios..." : "Gerar Relatório Consolidado"}
+            </Button>
+          </CardFooter>
+        </Card>
+      )}
+
+      {consolidatedReport && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><BookText className="h-6 w-6 text-primary"/>Relatório Consolidado Final</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ScrollArea className="h-[400px] w-full rounded-md border p-4 bg-muted/50">
+              <pre className="text-sm whitespace-pre-wrap">{consolidatedReport}</pre>
+            </ScrollArea>
+          </CardContent>
+        </Card>
+      )}
+
     </div>
   );
 }

@@ -1,3 +1,4 @@
+
 // src/app/image-analysis/page.tsx
 "use client";
 
@@ -16,6 +17,7 @@ import { analyzeImage, type AnalyzeImageInput, type AnalyzeImageOutput } from "@
 import Image from "next/image"; 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Alert as ShadAlert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import type { ImageCaseAnalysis } from "@/types/case";
 
 const MAX_FILE_SIZE_MB = 4;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
@@ -23,7 +25,7 @@ const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 function ImageAnalysisContent() {
   const searchParams = useSearchParams();
   const caseId = searchParams.get("caseId");
-  const caseName = searchParams.get("caseName");
+  const caseNameParam = searchParams.get("caseName");
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -34,6 +36,35 @@ function ImageAnalysisContent() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isCaseSelected = !!caseId;
+  const caseName = caseNameParam ? decodeURIComponent(caseNameParam) : "Não especificado";
+
+  const saveAnalysisToCase = async (aiOutput: AnalyzeImageOutput) => {
+    if (!caseId || !selectedFile) return;
+
+    const analysisEntry: Omit<ImageCaseAnalysis, 'id' | 'analysisDate'> = {
+      type: "Imagem",
+      summary: `Análise de imagem: ${selectedFile.name} - ${aiOutput.description.substring(0, 50)}...`,
+      originalFileName: selectedFile.name,
+      data: aiOutput,
+    };
+    
+    try {
+      const response = await fetch(`/api/cases/${caseId}/analyses`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(analysisEntry),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Falha ao salvar análise no caso.');
+      }
+      toast({ title: "Análise Salva no Caso", description: `Resultados da imagem "${selectedFile.name}" vinculados ao caso "${caseName}".` });
+    } catch (error) {
+      console.error("Erro ao salvar análise no caso:", error);
+      toast({ variant: "destructive", title: "Falha ao Salvar Análise", description: error instanceof Error ? error.message : String(error) });
+    }
+  };
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -109,8 +140,9 @@ function ImageAnalysisContent() {
       const result = await analyzeImage(input);
       setAnalysisResult(result);
       setProgress(100);
-      // TODO: Persist analysisResult to the selected case
-      toast({ title: "Análise de Imagem Concluída", description: `Imagem "${selectedFile.name}" processada para o caso "${caseName}". (Persistência pendente)` });
+      toast({ title: "Análise de Imagem Concluída", description: `Imagem "${selectedFile.name}" processada para o caso "${caseName}".` });
+      await saveAnalysisToCase(result);
+
     } catch (error) {
       console.error("Erro na análise de imagem:", error);
       toast({ variant: "destructive", title: "Falha na Análise", description: error instanceof Error ? error.message : "Ocorreu um erro desconhecido." });
@@ -146,7 +178,7 @@ function ImageAnalysisContent() {
           <FolderKanban className="h-4 w-4" />
           <AlertTitle>Nenhum Caso Selecionado!</AlertTitle>
           <AlertDescription>
-            Por favor, vá para a página de <Link href="/case-management" className="font-semibold underline">Gestão de Casos</Link> para selecionar ou criar um caso antes de prosseguir com a análise.
+            Por favor, vá para a página de <Link href="/case-management?newCase=true" className="font-semibold underline">Gestão de Casos</Link> para selecionar ou criar um caso antes de prosseguir com a análise.
           </AlertDescription>
         </ShadAlert>
       )}
@@ -154,9 +186,9 @@ function ImageAnalysisContent() {
       {isCaseSelected && (
          <ShadAlert variant="default" className="mb-4 bg-primary/5 border-primary/20">
             <Info className="h-4 w-4 text-primary" />
-            <AlertTitle className="text-primary">Analisando para o Caso: {decodeURIComponent(caseName || "Não especificado")}</AlertTitle>
+            <AlertTitle className="text-primary">Analisando para o Caso: {caseName}</AlertTitle>
             <AlertDescription>
-              Qualquer análise realizada aqui será conceitualmente vinculada a este caso.
+              Qualquer análise realizada aqui será vinculada a este caso.
             </AlertDescription>
           </ShadAlert>
       )}
@@ -212,7 +244,7 @@ function ImageAnalysisContent() {
         <Card>
           <CardHeader>
             <CardTitle>Resultados da Análise</CardTitle>
-             {caseName && <CardDescription>Referente ao caso: {decodeURIComponent(caseName)}</CardDescription>}
+             {caseName && <CardDescription>Referente ao caso: {caseName}</CardDescription>}
           </CardHeader>
           <CardContent className="space-y-6">
             <div>
@@ -281,7 +313,7 @@ function ImageAnalysisContent() {
 
 export default function ImageAnalysisPage() {
   return (
-    <Suspense fallback={<div>Carregando...</div>}>
+    <Suspense fallback={<div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Carregando...</p></div>}>
       <ImageAnalysisContent />
     </Suspense>
   )

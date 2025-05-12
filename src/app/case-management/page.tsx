@@ -1,7 +1,8 @@
+
 // src/app/case-management/page.tsx
 "use client";
 
-import { useState, type FormEvent, useEffect } from "react";
+import { useState, type FormEvent, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,50 +10,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { FolderKanban, PlusCircle, Trash2, Edit3, ListChecks, FileText, FileSearch, Mic, GitFork, ImageIcon, NotebookText } from "lucide-react";
+import { FolderKanban, PlusCircle, Trash2, Edit3, ListChecks, FileSearch, Mic, GitFork, ImageIcon, NotebookText, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
+import type { Case } from "@/types/case"; // Import Case interface
 
-interface CaseAnalysis {
-  id: string;
-  type: string; // e.g., "Documento", "Áudio", "Imagem", "Vínculo"
-  summary: string;
-  originalFileName?: string;
-  analysisDate: string;
-}
-
-export interface Case {
-  id: string;
-  name: string;
-  description: string;
-  dateCreated: string;
-  lastModified: string;
-  status: "Aberto" | "Em Investigação" | "Resolvido" | "Fechado";
-  relatedAnalyses: CaseAnalysis[];
-}
-
-// Simple client-side storage for cases
-const CASE_STORAGE_KEY = "investigationCases";
-
-const getCasesFromStorage = (): Case[] => {
-  if (typeof window !== 'undefined') {
-    const storedCases = localStorage.getItem(CASE_STORAGE_KEY);
-    return storedCases ? JSON.parse(storedCases) : [];
-  }
-  return [];
-};
-
-const saveCasesToStorage = (cases: Case[]) => {
-  if (typeof window !== 'undefined') {
-    localStorage.setItem(CASE_STORAGE_KEY, JSON.stringify(cases));
-  }
-};
-
-
-export default function CaseManagementPage() {
+function CaseManagementPageContent() {
   const [cases, setCases] = useState<Case[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingCase, setEditingCase] = useState<Case | null>(null);
   
@@ -62,22 +29,34 @@ export default function CaseManagementPage() {
 
   const { toast } = useToast();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const newCaseTrigger = searchParams.get('newCase');
 
+  const fetchCases = async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch('/api/cases');
+      if (!response.ok) throw new Error('Falha ao buscar casos.');
+      const data = await response.json();
+      setCases(data);
+    } catch (error) {
+      toast({ variant: "destructive", title: "Erro ao Carregar Casos", description: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    setCases(getCasesFromStorage());
+    fetchCases();
   }, []);
 
   useEffect(() => {
     if (newCaseTrigger === 'true') {
       setIsFormOpen(true);
+      // Remove the query param after triggering
+      router.replace('/case-management', undefined);
     }
-  }, [newCaseTrigger]);
-
-  useEffect(() => {
-    saveCasesToStorage(cases);
-  }, [cases]);
-
+  }, [newCaseTrigger, router]);
 
   const resetForm = () => {
     setCaseName("");
@@ -86,35 +65,36 @@ export default function CaseManagementPage() {
     setEditingCase(null);
   };
 
-  const handleSubmit = (event: FormEvent) => {
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     if (!caseName.trim()) {
       toast({ variant: "destructive", title: "Erro", description: "O nome do caso é obrigatório." });
       return;
     }
 
-    const now = new Date().toISOString();
-    let updatedCases;
+    const caseData = { name: caseName, description: caseDescription, status: caseStatus };
+    const method = editingCase ? 'PUT' : 'POST';
+    const endpoint = editingCase ? `/api/cases/${editingCase.id}` : '/api/cases';
 
-    if (editingCase) {
-      updatedCases = cases.map(c => c.id === editingCase.id ? { ...editingCase, name: caseName, description: caseDescription, status: caseStatus, lastModified: now } : c);
-      toast({ title: "Caso Atualizado", description: `O caso "${caseName}" foi atualizado com sucesso.` });
-    } else {
-      const newCase: Case = {
-        id: crypto.randomUUID(),
-        name: caseName,
-        description: caseDescription,
-        dateCreated: now,
-        lastModified: now,
-        status: caseStatus,
-        relatedAnalyses: [],
-      };
-      updatedCases = [newCase, ...cases];
-      toast({ title: "Caso Criado", description: `O caso "${caseName}" foi criado com sucesso.` });
+    try {
+      const response = await fetch(endpoint, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(caseData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Falha ao ${editingCase ? 'atualizar' : 'criar'} caso.`);
+      }
+      
+      toast({ title: `Caso ${editingCase ? "Atualizado" : "Criado"}`, description: `O caso "${caseName}" foi ${editingCase ? "atualizado" : "criado"} com sucesso.` });
+      fetchCases(); // Re-fetch cases to update the list
+      resetForm();
+      setIsFormOpen(false);
+    } catch (error) {
+      toast({ variant: "destructive", title: "Erro", description: error instanceof Error ? error.message : String(error) });
     }
-    setCases(updatedCases);
-    resetForm();
-    setIsFormOpen(false);
   };
 
   const handleEdit = (caseToEdit: Case) => {
@@ -125,10 +105,18 @@ export default function CaseManagementPage() {
     setIsFormOpen(true);
   };
 
-  const handleDelete = (caseId: string) => {
-    const updatedCases = cases.filter(c => c.id !== caseId);
-    setCases(updatedCases);
-    toast({ title: "Caso Excluído", description: "O caso foi excluído." });
+  const handleDelete = async (caseId: string) => {
+    try {
+      const response = await fetch(`/api/cases/${caseId}`, { method: 'DELETE' });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Falha ao excluir caso.');
+      }
+      toast({ title: "Caso Excluído", description: "O caso foi excluído com sucesso." });
+      fetchCases(); // Re-fetch cases
+    } catch (error) {
+      toast({ variant: "destructive", title: "Erro ao Excluir", description: error instanceof Error ? error.message : String(error) });
+    }
   };
 
   return (
@@ -180,7 +168,12 @@ export default function CaseManagementPage() {
         </Dialog>
       </header>
 
-      {cases.length === 0 ? (
+      {isLoading ? (
+        <div className="flex justify-center items-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="ml-2 text-muted-foreground">Carregando casos...</p>
+        </div>
+      ) : cases.length === 0 ? (
         <Card className="text-center py-10">
           <CardContent className="flex flex-col items-center gap-4">
             <FolderKanban className="h-16 w-16 text-muted-foreground" />
@@ -249,8 +242,16 @@ export default function CaseManagementPage() {
           </div>
         </ScrollArea>
       )}
-      <p className="text-xs text-muted-foreground text-center mt-4">Nota: A gestão de casos utiliza o LocalStorage do navegador. Os dados não são persistidos no servidor.</p>
+      <p className="text-xs text-muted-foreground text-center mt-4">Nota: A gestão de casos utiliza uma API simulada com dados em memória. Os dados serão perdidos ao reiniciar o servidor.</p>
     </div>
+  );
+}
+
+export default function CaseManagementPage() {
+  return (
+    <Suspense fallback={<div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Carregando...</p></div>}>
+      <CaseManagementPageContent />
+    </Suspense>
   );
 }
 

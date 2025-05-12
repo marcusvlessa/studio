@@ -1,3 +1,4 @@
+
 // src/app/link-analysis/page.tsx
 "use client";
 
@@ -12,17 +13,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { GitFork, Search, RotateCcw, Loader2, FileText, AlertCircle, HelpCircle, FolderKanban, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { findEntityRelationships, type FindEntityRelationshipsInput, type FindEntityRelationshipsOutput } from "@/ai/flows/find-entity-relationships";
-import { analyzeDocument, type AnalyzeDocumentInput } from "@/ai/flows/analyze-document-flow";
+import { analyzeDocument, type AnalyzeDocumentInput, type AnalyzeDocumentOutput } from "@/ai/flows/analyze-document-flow";
 import { Progress } from "@/components/ui/progress";
 import { Alert as ShadAlert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { LinkAnalysisGraph } from "@/components/link-analysis/LinkAnalysisGraph";
+import type { LinkCaseAnalysis } from "@/types/case";
 
 type AnalysisContextType = "Geral" | "Telefonia" | "Financeira" | "Pessoas" | "Digital";
 
 function LinkAnalysisContent() {
   const searchParams = useSearchParams();
   const caseId = searchParams.get("caseId");
-  const caseName = searchParams.get("caseName");
+  const caseNameParam = searchParams.get("caseName");
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [relationships, setRelationships] = useState<FindEntityRelationshipsOutput['relationships'] | null>(null);
@@ -34,6 +36,40 @@ function LinkAnalysisContent() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isCaseSelected = !!caseId;
+  const caseName = caseNameParam ? decodeURIComponent(caseNameParam) : "Não especificado";
+
+  const saveAnalysisToCase = async (aiOutput: FindEntityRelationshipsOutput) => {
+    if (!caseId || !selectedFile) return;
+
+    const summary = aiOutput.relationships.length > 0 
+      ? `Análise de vínculos de '${selectedFile.name}': ${aiOutput.relationships.length} relações encontradas.`
+      : `Análise de vínculos de '${selectedFile.name}': Nenhuma relação encontrada.`;
+
+    const analysisEntry: Omit<LinkCaseAnalysis, 'id' | 'analysisDate'> = {
+      type: "Vínculo",
+      summary: summary,
+      originalFileName: selectedFile.name,
+      data: aiOutput,
+    };
+    
+    try {
+      const response = await fetch(`/api/cases/${caseId}/analyses`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(analysisEntry),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Falha ao salvar análise no caso.');
+      }
+      toast({ title: "Análise Salva no Caso", description: `Resultados da análise de vínculos de "${selectedFile.name}" vinculados ao caso "${caseName}".` });
+    } catch (error) {
+      console.error("Erro ao salvar análise no caso:", error);
+      toast({ variant: "destructive", title: "Falha ao Salvar Análise", description: error instanceof Error ? error.message : String(error) });
+    }
+  };
+
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -159,7 +195,7 @@ function LinkAnalysisContent() {
         setProgress(30);
         setProcessingMessage("Extraindo texto do arquivo com IA (pode levar um momento)...");
         const docInput: AnalyzeDocumentInput = { fileDataUri, fileName: selectedFile.name };
-        const docResult = await analyzeDocument(docInput); 
+        const docResult: AnalyzeDocumentOutput = await analyzeDocument(docInput); 
         
         extractedTextForParsing = docResult.extractedText || ""; 
         if (docResult.extractedText && !docResult.extractedText.startsWith("AVISO DO SISTEMA:")) {
@@ -193,7 +229,8 @@ function LinkAnalysisContent() {
       if (finalEntities.length === 0 && selectedFile.name) {
         // Fallback to using filename if no other entities found
         finalEntities.push(selectedFile.name);
-         toast({ title: "Entidades Baseadas em Metadados", description: `Nenhuma entidade extraída do conteúdo. Usando nome do arquivo "${selectedFile.name}" para análise.` });
+        if (selectedFile.type) finalEntities.push(selectedFile.type);
+         toast({ title: "Entidades Baseadas em Metadados", description: `Nenhuma entidade extraída do conteúdo. Usando nome/tipo do arquivo "${selectedFile.name}" para análise.` });
       } else if (finalEntities.length > 0) {
           toast({ title: "Entidades Identificadas", description: `Total de ${finalEntities.length} entidades únicas identificadas para o caso "${caseName}".` });
       } else {
@@ -208,12 +245,12 @@ function LinkAnalysisContent() {
       setRelationships(result.relationships);
       setProgress(100);
 
-      // TODO: Persist analysisResult (relationships) to the selected case
       if (result.relationships && result.relationships.length > 0) {
-        toast({ title: "Análise de Vínculos Concluída", description: `Encontrados ${result.relationships.length} vínculos para o caso "${caseName}". (Persistência pendente)` });
+        toast({ title: "Análise de Vínculos Concluída", description: `Encontrados ${result.relationships.length} vínculos para o caso "${caseName}".` });
       } else {
-         toast({ title: "Análise de Vínculos Concluída", description: `Nenhum vínculo encontrado para o caso "${caseName}". (Persistência pendente)` });
+         toast({ title: "Análise de Vínculos Concluída", description: `Nenhum vínculo encontrado para o caso "${caseName}".` });
       }
+      await saveAnalysisToCase(result);
 
     } catch (error: any) { 
       console.error("Erro na análise de vínculos:", error);
@@ -248,7 +285,7 @@ function LinkAnalysisContent() {
           <FolderKanban className="h-4 w-4" />
           <AlertTitle>Nenhum Caso Selecionado!</AlertTitle>
           <AlertDescription>
-            Por favor, vá para a página de <Link href="/case-management" className="font-semibold underline">Gestão de Casos</Link> para selecionar ou criar um caso antes de prosseguir com a análise.
+            Por favor, vá para a página de <Link href="/case-management?newCase=true" className="font-semibold underline">Gestão de Casos</Link> para selecionar ou criar um caso antes de prosseguir com a análise.
           </AlertDescription>
         </ShadAlert>
       )}
@@ -256,9 +293,9 @@ function LinkAnalysisContent() {
       {isCaseSelected && (
          <ShadAlert variant="default" className="mb-4 bg-primary/5 border-primary/20">
             <Info className="h-4 w-4 text-primary" />
-            <AlertTitle className="text-primary">Analisando para o Caso: {decodeURIComponent(caseName || "Não especificado")}</AlertTitle>
+            <AlertTitle className="text-primary">Analisando para o Caso: {caseName}</AlertTitle>
             <AlertDescription>
-              Qualquer análise realizada aqui será conceitualmente vinculada a este caso.
+              Qualquer análise realizada aqui será vinculada a este caso.
             </AlertDescription>
           </ShadAlert>
       )}
@@ -362,7 +399,7 @@ function LinkAnalysisContent() {
 
 export default function LinkAnalysisPage() {
   return (
-    <Suspense fallback={<div>Carregando...</div>}>
+    <Suspense fallback={<div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Carregando...</p></div>}>
       <LinkAnalysisContent />
     </Suspense>
   )

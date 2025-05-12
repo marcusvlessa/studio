@@ -1,3 +1,4 @@
+
 // src/app/document-analysis/page.tsx
 "use client";
 
@@ -10,18 +11,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { FileUp, RotateCcw, Search, Loader2, FileTextIcon, CheckCircle, AlertCircle, Info, UserCheck, FileSignature, ListChecks, AlertTriangle, BookOpen, Scale, Gavel, FolderKanban } from "lucide-react";
+import { FileUp, RotateCcw, Search, Loader2, FileTextIcon, CheckCircle, AlertCircle, Info, UserCheck, FileSignature, Gavel, ListChecks, AlertTriangle, BookOpen, Scale, FolderKanban } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { analyzeDocument, type AnalyzeDocumentInput, type AnalyzeDocumentOutput } from "@/ai/flows/analyze-document-flow";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Alert as ShadAlert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import type { DocumentCaseAnalysis } from "@/types/case";
 
 function DocumentAnalysisContent() {
   const searchParams = useSearchParams();
   const caseId = searchParams.get("caseId");
-  const caseName = searchParams.get("caseName");
+  const caseNameParam = searchParams.get("caseName");
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
@@ -32,6 +34,36 @@ function DocumentAnalysisContent() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isCaseSelected = !!caseId;
+  const caseName = caseNameParam ? decodeURIComponent(caseNameParam) : "Não especificado";
+
+  const saveAnalysisToCase = async (aiOutput: AnalyzeDocumentOutput) => {
+    if (!caseId || !selectedFile) return;
+
+    const analysisEntry: Omit<DocumentCaseAnalysis, 'id' | 'analysisDate'> = {
+      type: "Documento",
+      summary: `Análise de '${selectedFile.name}': ${aiOutput.summary.substring(0, 100)}${aiOutput.summary.length > 100 ? '...' : ''}`,
+      originalFileName: selectedFile.name,
+      data: aiOutput,
+    };
+
+    try {
+      const response = await fetch(`/api/cases/${caseId}/analyses`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(analysisEntry),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Falha ao salvar análise no caso.');
+      }
+      toast({ title: "Análise Salva no Caso", description: `Resultados de "${selectedFile.name}" foram vinculados ao caso "${caseName}".` });
+    } catch (error) {
+      console.error("Erro ao salvar análise no caso:", error);
+      toast({ variant: "destructive", title: "Falha ao Salvar Análise", description: error instanceof Error ? error.message : String(error) });
+    }
+  };
+
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -121,8 +153,8 @@ function DocumentAnalysisContent() {
       const result = await analyzeDocument(inputData);
       setAnalysisResult(result);
       setProgress(100);
-      // TODO: Persist analysisResult to the selected case (e.g., via API call or state management)
-      toast({ title: "Análise Concluída", description: `Documento "${fileName}" processado para o caso "${caseName}". (Persistência de resultado pendente)` });
+      toast({ title: "Análise Concluída", description: `Documento "${fileName}" processado para o caso "${caseName}".` });
+      await saveAnalysisToCase(result);
 
     } catch (error: any) {
        console.error("Erro na análise do documento:", error);
@@ -166,9 +198,9 @@ function DocumentAnalysisContent() {
       {isCaseSelected && (
          <ShadAlert variant="default" className="mb-4 bg-primary/5 border-primary/20">
             <Info className="h-4 w-4 text-primary" />
-            <AlertTitle className="text-primary">Analisando para o Caso: {decodeURIComponent(caseName || "Não especificado")}</AlertTitle>
+            <AlertTitle className="text-primary">Analisando para o Caso: {caseName}</AlertTitle>
             <AlertDescription>
-              Qualquer análise realizada aqui será conceitualmente vinculada a este caso.
+              Qualquer análise realizada aqui será vinculada a este caso.
             </AlertDescription>
           </ShadAlert>
       )}
@@ -386,7 +418,7 @@ function DocumentAnalysisContent() {
 
 export default function DocumentAnalysisPage() {
   return (
-    <Suspense fallback={<div>Carregando...</div>}>
+    <Suspense fallback={<div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Carregando...</p></div>}>
       <DocumentAnalysisContent />
     </Suspense>
   );

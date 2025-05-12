@@ -1,3 +1,4 @@
+
 // src/app/ric-generation/page.tsx
 "use client";
 
@@ -11,41 +12,74 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { NotebookText, Loader2, Download, FolderKanban, Info } from "lucide-react";
 import { generateRic, type GenerateRicInput, type GenerateRicOutput } from "@/ai/flows/generate-ric-flow";
-import type { Case } from "../case-management/page"; // Import Case interface
+import type { Case } from "@/types/case"; 
 import { Alert as ShadAlert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-
-const CASE_STORAGE_KEY = "investigationCases";
-
-const getCasesFromStorage = (): Case[] => {
-  if (typeof window !== 'undefined') {
-    const storedCases = localStorage.getItem(CASE_STORAGE_KEY);
-    return storedCases ? JSON.parse(storedCases) : [];
-  }
-  return [];
-};
 
 function RicGenerationContent() {
   const searchParams = useSearchParams();
   const preselectedCaseId = searchParams.get("caseId");
 
   const [allCases, setAllCases] = useState<Case[]>([]);
-  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(preselectedCaseId);
+  const [isLoadingCases, setIsLoadingCases] = useState(true);
+  const [selectedCaseId, setSelectedCaseId] = useState<string | undefined>(preselectedCaseId || undefined);
+  const [selectedCaseDetails, setSelectedCaseDetails] = useState<Case | null>(null);
   const [generatedRic, setGeneratedRic] = useState<GenerateRicOutput | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingRic, setIsLoadingRic] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
-    setAllCases(getCasesFromStorage());
-  }, []);
+    const fetchCases = async () => {
+      setIsLoadingCases(true);
+      try {
+        const response = await fetch('/api/cases');
+        if (!response.ok) throw new Error('Falha ao buscar casos.');
+        const data: Case[] = await response.json();
+        setAllCases(data);
+        if (preselectedCaseId && data.some(c => c.id === preselectedCaseId)) {
+          setSelectedCaseId(preselectedCaseId);
+        }
+      } catch (error) {
+        toast({ variant: "destructive", title: "Erro ao Carregar Casos", description: error instanceof Error ? error.message : String(error) });
+      } finally {
+        setIsLoadingCases(false);
+      }
+    };
+    fetchCases();
+  }, [preselectedCaseId, toast]);
   
   useEffect(() => {
     // If preselectedCaseId changes (e.g. navigation), update selectedCaseId
-    setSelectedCaseId(preselectedCaseId);
-    setGeneratedRic(null); // Clear previous RIC if case changes
-  }, [preselectedCaseId]);
+    // and clear previous RIC and details
+    if (preselectedCaseId && preselectedCaseId !== selectedCaseId) {
+        setSelectedCaseId(preselectedCaseId);
+        setSelectedCaseDetails(null);
+        setGeneratedRic(null);
+    }
+  }, [preselectedCaseId, selectedCaseId]);
 
+  useEffect(() => {
+    const fetchCaseDetails = async () => {
+      if (selectedCaseId) {
+        setIsLoadingCases(true); // Use same loader for case details
+        try {
+          const response = await fetch(`/api/cases/${selectedCaseId}`);
+          if (!response.ok) throw new Error('Falha ao buscar detalhes do caso.');
+          const data: Case = await response.json();
+          setSelectedCaseDetails(data);
+        } catch (error) {
+          toast({ variant: "destructive", title: "Erro ao Carregar Detalhes do Caso", description: error instanceof Error ? error.message : String(error) });
+          setSelectedCaseDetails(null);
+        } finally {
+          setIsLoadingCases(false);
+        }
+      } else {
+        setSelectedCaseDetails(null);
+      }
+    };
+    fetchCaseDetails();
+    setGeneratedRic(null); // Clear previous RIC if case selection changes
+  }, [selectedCaseId, toast]);
 
-  const selectedCaseDetails = allCases.find(c => c.id === selectedCaseId);
 
   const handleGenerateRic = async () => {
     if (!selectedCaseId || !selectedCaseDetails) {
@@ -53,26 +87,24 @@ function RicGenerationContent() {
       return;
     }
     if (selectedCaseDetails.relatedAnalyses.length === 0) {
-      toast({ variant: "default", title: "Nenhuma Análise", description: "Este caso não possui análises vinculadas para gerar um RIC." });
-      // Optionally, still proceed to generate a basic RIC structure
+      toast({ variant: "default", title: "Nenhuma Análise", description: "Este caso não possui análises vinculadas para gerar um RIC, mas um relatório básico será tentado." });
     }
 
-    setIsLoading(true);
+    setIsLoadingRic(true);
     setGeneratedRic(null);
 
     try {
       const input: GenerateRicInput = {
         caseName: selectedCaseDetails.name,
         caseDescription: selectedCaseDetails.description,
-        // Map CaseAnalysis to AnalysisItemSchema if necessary, current structures are compatible
         analyses: selectedCaseDetails.relatedAnalyses.map(analysis => ({
           type: analysis.type,
-          summary: analysis.summary,
+          summary: analysis.summary, // Using the concise summary from CaseAnalysis
           sourceFileName: analysis.originalFileName,
         })),
       };
       
-      const result = await generateRic(result);
+      const result = await generateRic(input); // Corrected: use input variable
       setGeneratedRic(result);
       toast({ title: "RIC Gerado", description: `RIC para o caso "${selectedCaseDetails.name}" foi gerado com sucesso.` });
 
@@ -80,7 +112,7 @@ function RicGenerationContent() {
       console.error("Erro ao gerar RIC:", error);
       toast({ variant: "destructive", title: "Falha na Geração do RIC", description: error instanceof Error ? error.message : "Ocorreu um erro desconhecido." });
     } finally {
-      setIsLoading(false);
+      setIsLoadingRic(false);
     }
   };
   
@@ -104,7 +136,16 @@ function RicGenerationContent() {
         <p className="text-muted-foreground">Selecione um caso para consolidar as informações e gerar um RIC automaticamente.</p>
       </header>
 
-      {!preselectedCaseId && allCases.length === 0 && (
+      {isLoadingCases && !selectedCaseId && (
+         <ShadAlert variant="default" className="mb-4">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <AlertTitle>Carregando Casos...</AlertTitle>
+          <AlertDescription>
+            Buscando lista de casos investigativos.
+          </AlertDescription>
+        </ShadAlert>
+      )}
+      {!isLoadingCases && allCases.length === 0 && (
          <ShadAlert variant="destructive" className="mb-4">
           <FolderKanban className="h-4 w-4" />
           <AlertTitle>Nenhum Caso Disponível!</AlertTitle>
@@ -121,9 +162,9 @@ function RicGenerationContent() {
         </CardHeader>
         <CardContent className="space-y-4">
           <Select 
-            onValueChange={(value) => {setSelectedCaseId(value); setGeneratedRic(null);}} 
-            value={selectedCaseId || undefined}
-            disabled={allCases.length === 0}
+            onValueChange={(value) => {setSelectedCaseId(value);}} 
+            value={selectedCaseId || ""}
+            disabled={isLoadingCases || allCases.length === 0}
           >
             <SelectTrigger className="w-full md:w-1/2">
               <SelectValue placeholder="Selecione um caso..." />
@@ -134,7 +175,7 @@ function RicGenerationContent() {
                   {c.name} ({c.relatedAnalyses.length} análises)
                 </SelectItem>
               ))}
-              {allCases.length === 0 && <div className="p-2 text-sm text-muted-foreground text-center">Nenhum caso cadastrado. <Link href="/case-management?newCase=true" className="font-semibold underline">Crie um caso</Link>.</div>}
+              {!isLoadingCases && allCases.length === 0 && <div className="p-2 text-sm text-muted-foreground text-center">Nenhum caso cadastrado. <Link href="/case-management?newCase=true" className="font-semibold underline">Crie um caso</Link>.</div>}
             </SelectContent>
           </Select>
           {selectedCaseDetails && (
@@ -150,14 +191,14 @@ function RicGenerationContent() {
           )}
         </CardContent>
         <CardFooter>
-          <Button onClick={handleGenerateRic} disabled={!selectedCaseId || isLoading}>
-            {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <NotebookText className="mr-2 h-4 w-4" />}
-            {isLoading ? "Gerando RIC..." : "Gerar RIC"}
+          <Button onClick={handleGenerateRic} disabled={!selectedCaseId || isLoadingRic || isLoadingCases}>
+            {isLoadingRic ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <NotebookText className="mr-2 h-4 w-4" />}
+            {isLoadingRic ? "Gerando RIC..." : "Gerar RIC"}
           </Button>
         </CardFooter>
       </Card>
 
-      {isLoading && !generatedRic && (
+      {isLoadingRic && !generatedRic && (
         <Card>
           <CardContent className="p-6 text-center">
             <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-2" />
@@ -182,14 +223,14 @@ function RicGenerationContent() {
           </CardFooter>
         </Card>
       )}
-       <p className="text-xs text-muted-foreground text-center mt-4">Nota: A funcionalidade de vincular e salvar análises de outros módulos aos casos é conceitual e usa LocalStorage. Para persistência real, seria necessária integração com backend.</p>
+       <p className="text-xs text-muted-foreground text-center mt-4">Nota: A gestão de casos utiliza uma API simulada com dados em memória. Para persistência real, seria necessária integração com banco de dados.</p>
     </div>
   );
 }
 
 export default function RicGenerationPage() {
   return (
-    <Suspense fallback={<div>Carregando...</div>}>
+    <Suspense fallback={<div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Carregando...</p></div>}>
       <RicGenerationContent />
     </Suspense>
   )

@@ -7,13 +7,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { FileImage, Search, RotateCcw, Loader2, Sparkles, Smile } from "lucide-react"; // Removed ImageIcon as FileImage is used
+import { FileImage, Search, RotateCcw, Loader2, Sparkles, Smile } from "lucide-react"; 
 import { useToast } from "@/hooks/use-toast";
 import { analyzeImage, type AnalyzeImageInput, type AnalyzeImageOutput } from "@/ai/flows/analyze-image";
 import Image from "next/image"; 
 import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
+
+const MAX_FILE_SIZE_MB = 4;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
 export default function ImageAnalysisPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -27,25 +30,40 @@ export default function ImageAnalysisPage() {
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      if (file.type.startsWith("image/")) {
-        setSelectedFile(file);
-        setAnalysisResult(null); 
-        setProgress(0);
-
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          setImagePreview(reader.result as string);
-        };
-        reader.readAsDataURL(file);
-        toast({ title: "Imagem Selecionada", description: file.name });
-      } else {
+      if (!file.type.startsWith("image/")) {
         toast({ variant: "destructive", title: "Tipo de Arquivo Inválido", description: "Por favor, envie um arquivo de imagem (PNG, JPG, etc.)." });
         setSelectedFile(null);
         setImagePreview(null);
         if (fileInputRef.current) {
             fileInputRef.current.value = "";
         }
+        return;
       }
+
+      if (file.size > MAX_FILE_SIZE_BYTES) {
+        toast({
+          variant: "destructive",
+          title: "Arquivo Muito Grande",
+          description: `O tamanho máximo da imagem é ${MAX_FILE_SIZE_MB}MB. O arquivo selecionado tem ${(file.size / (1024*1024)).toFixed(2)}MB.`,
+        });
+        setSelectedFile(null);
+        setImagePreview(null);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
+        return;
+      }
+      
+      setSelectedFile(file);
+      setAnalysisResult(null); 
+      setProgress(0);
+
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+      toast({ title: "Imagem Selecionada", description: file.name });
     }
   };
 
@@ -70,6 +88,10 @@ export default function ImageAnalysisPage() {
     }, 200);
 
     try {
+      // Ensure imagePreview is not null, although previous check should cover it.
+      if (!imagePreview) {
+          throw new Error("Pré-visualização da imagem não está disponível.");
+      }
       const photoDataUri = imagePreview;
       
       setProgress(50); // Image ready, AI call starting
@@ -112,7 +134,7 @@ export default function ImageAnalysisPage() {
       <Card>
         <CardHeader>
           <CardTitle>Enviar Imagem</CardTitle>
-          <CardDescription>Selecione um arquivo de imagem (PNG, JPG, GIF, etc.) para iniciar a análise.</CardDescription>
+          <CardDescription>Selecione um arquivo de imagem (PNG, JPG, GIF, etc.) com no máximo {MAX_FILE_SIZE_MB}MB para iniciar a análise.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid w-full max-w-sm items-center gap-1.5">
@@ -227,3 +249,4 @@ export default function ImageAnalysisPage() {
     </div>
   );
 }
+

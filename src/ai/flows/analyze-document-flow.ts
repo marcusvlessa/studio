@@ -19,6 +19,7 @@ const AnalyzeDocumentInputSchema = z.object({
     ),
   textContent: z.string().optional().describe('O conteúdo textual direto de um arquivo (ex: .txt). Usado se fileDataUri não for fornecido.'),
   fileName: z.string().optional().describe('O nome do arquivo original, se disponível.'),
+  isMediaInput: z.boolean().optional().describe("Flag interna para indicar se fileDataUri contém mídia processável para o prompt."),
 }).refine(data => data.fileDataUri || data.textContent, {
   message: "Either fileDataUri or textContent must be provided for analysis.",
   path: ["fileDataUri", "textContent"],
@@ -62,18 +63,15 @@ const AnalyzeDocumentOutputSchema = z.object({
 });
 export type AnalyzeDocumentOutput = z.infer<typeof AnalyzeDocumentOutputSchema>;
 
-// Helper function to extract MIME type from data URI
 function getMimeTypeFromDataUri(dataUri: string): string | null {
   const match = dataUri.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,/);
   return match ? match[1] : null;
 }
 
-// List of MIME types that Gemini can process directly with {{media}} tag for document analysis
 const DIRECTLY_PROCESSABLE_MIME_TYPES = [
   'image/png',
   'image/jpeg',
   'image/jpg',
-  // 'image/gif', // GIF can be problematic for text extraction, consider removing if issues persist
   'image/webp',
   'application/pdf',
 ];
@@ -87,7 +85,6 @@ export async function analyzeDocument(input: AnalyzeDocumentInput): Promise<Anal
     let effectiveMimeTypeForCheck = originalMimeType ? originalMimeType.toLowerCase() : null;
     const isPdfByExtension = fileName.toLowerCase().endsWith('.pdf');
 
-    // If browser reports application/octet-stream for a .pdf file, override to application/pdf
     if (isPdfByExtension && (effectiveMimeTypeForCheck === 'application/octet-stream' || !effectiveMimeTypeForCheck)) {
       effectiveMimeTypeForCheck = 'application/pdf';
       if (input.fileDataUri.includes(',')) {
@@ -99,30 +96,26 @@ export async function analyzeDocument(input: AnalyzeDocumentInput): Promise<Anal
     const isDirectlyProcessable = effectiveMimeTypeForCheck && DIRECTLY_PROCESSABLE_MIME_TYPES.includes(effectiveMimeTypeForCheck);
 
     if (isDirectlyProcessable) {
-      const fileProcessingInput: AnalyzeDocumentInput = {
+      const internalFlowInput: AnalyzeDocumentInput = {
         fileDataUri: processedFileDataUri, 
         fileName: fileName,
       };
-      return analyzeDocumentFlowInternal(fileProcessingInput);
+      return analyzeDocumentFlowInternal(internalFlowInput);
     } else {
-      // For non-directly processable files, we use a system message.
-      const detectedMimeTypeInfo = originalMimeType || (isPdfByExtension ? 'pdf (por extensão)' : 'desconhecido');
-      const systemMessage = `AVISO DO SISTEMA: O arquivo '${fileName}' (tipo MIME: ${detectedMimeTypeInfo}) foi fornecido. Seu conteúdo binário não pode ser processado/extraído diretamente pela IA neste fluxo. A análise subsequente deve se concentrar no nome do arquivo, tipo MIME informado e na natureza deste aviso. Tente extrair entidades do nome do arquivo e do tipo MIME.`;
-      
-      const textProcessingInput: AnalyzeDocumentInput = { 
+      const systemMessage = `AVISO DO SISTEMA: O arquivo '${fileName}' (tipo MIME: ${effectiveMimeTypeForCheck || 'desconhecido'}) foi fornecido. Seu conteúdo binário não pode ser processado/extraído diretamente pela IA neste fluxo. A análise subsequente deve se concentrar no nome do arquivo, tipo MIME informado e na natureza deste aviso. Tente extrair entidades do nome do arquivo e do tipo MIME.`;
+      const internalFlowInput: AnalyzeDocumentInput = { 
         textContent: systemMessage, 
         fileName: fileName 
       };
-      return analyzeDocumentFlowInternal(textProcessingInput);
+      return analyzeDocumentFlowInternal(internalFlowInput);
     }
   } else if (input.textContent) {
-    const textProcessingInput: AnalyzeDocumentInput = {
+    const internalFlowInput: AnalyzeDocumentInput = {
       textContent: input.textContent,
       fileName: input.fileName
     };
-    return analyzeDocumentFlowInternal(textProcessingInput);
+    return analyzeDocumentFlowInternal(internalFlowInput);
   } else {
-    // This case should ideally not be reached due to Zod refinement, but kept for robustness.
     throw new Error("Input inválido: é necessário fornecer fileDataUri ou textContent para a função analyzeDocument.");
   }
 }
@@ -133,7 +126,20 @@ const analyzeDocumentPrompt = ai.definePrompt({
   output: {schema: AnalyzeDocumentOutputSchema},
   prompt: `Você é uma Inteligência Artificial Policial Multifacetada, capaz de atuar em três papéis distintos e sequenciais para analisar um documento: Investigador de Polícia, Escrivão de Polícia e Delegado de Polícia.
 
-{{#if textContent}}
+{{#if isMediaInput}}
+**Análise de Arquivo (Imagem ou PDF Processável Diretamente):**
+Documento para análise ({{#if fileName}}Nome: {{fileName}}{{else}}Sem nome{{/if}}):
+{{media url=fileDataUri}}
+
+Instruções para IA com Arquivo Processável Diretamente: O documento acima é um arquivo (imagem ou PDF) cujo conteúdo a IA pode processar diretamente. Prossiga com as Fases 1, 2 e 3.
+Na Fase 2 (Escrivão):
+-   **Extração de Texto Completo**: Se o documento for uma imagem ou PDF baseado em imagem, aplique OCR para extrair todo o texto. Se for um PDF textual, extraia o texto diretamente. Coloque este texto no campo 'extractedText'. Se a extração não for possível ou o documento não contiver texto (ex: foto de uma paisagem sem texto), indique isso claramente no campo 'extractedText' (ex: "Não foi possível extrair texto" ou "Documento é uma imagem sem conteúdo textual").
+-   **Identificação de Idioma**: Identifique o idioma principal do texto extraído e retorne seu código ISO 639-1 no campo 'language'.
+-   **Resumo Conciso do Documento Original**: Forneça um resumo objetivo e conciso do conteúdo principal do documento (baseado no texto extraído). Coloque no campo 'summary'.
+-   **Entidades Chave do Documento Original**: Identifique e liste as entidades chave (Pessoas, Organizações, Locais, Datas, Valores Monetários, etc.) encontradas no texto extraído. Coloque no campo 'keyEntities'.
+-   **Sumário Formalizado dos Fatos (Estilo Boletim de Ocorrência)**: Com base no conteúdo do documento (texto extraído), elabore um resumo formalizado e objetivo dos fatos e informações cruciais. Coloque no campo 'clerkReport.formalizedSummary'.
+-   **Informações Chave Estruturadas para Relatório Policial**: Categorize e detalhe as informações chave extraídas do documento (texto extraído). Preencha o campo 'clerkReport.keyInformationStructured'.
+{{else if textContent}}
 **Análise de Conteúdo Textual ou Metadados de Arquivo:**
 Nome do Arquivo: {{#if fileName}}{{fileName}}{{else}}Nome não fornecido{{/if}}
 Conteúdo para Análise:
@@ -155,20 +161,9 @@ Para texto extraído diretamente (não "AVISO DO SISTEMA"):
 -   Detecte 'language'.
 -   Gere 'summary' e 'keyEntities' a partir do texto.
 -   Prossiga com as Fases 1, 2 e 3 aplicadas ao texto.
-
 {{else}}
-**Análise de Arquivo (Imagem ou PDF Processável Diretamente):**
-Documento para análise ({{#if fileName}}Nome: {{fileName}}{{else}}Sem nome{{/if}}):
-{{media url=fileDataUri}}
-
-Instruções para IA com Arquivo Processável Diretamente: O documento acima é um arquivo (imagem ou PDF) cujo conteúdo a IA pode processar diretamente. Prossiga com as Fases 1, 2 e 3.
-Na Fase 2 (Escrivão):
--   **Extração de Texto Completo**: Se o documento for uma imagem ou PDF baseado em imagem, aplique OCR para extrair todo o texto. Se for um PDF textual, extraia o texto diretamente. Coloque este texto no campo 'extractedText'. Se a extração não for possível ou o documento não contiver texto (ex: foto de uma paisagem sem texto), indique isso claramente no campo 'extractedText' (ex: "Não foi possível extrair texto" ou "Documento é uma imagem sem conteúdo textual").
--   **Identificação de Idioma**: Identifique o idioma principal do texto extraído e retorne seu código ISO 639-1 no campo 'language'.
--   **Resumo Conciso do Documento Original**: Forneça um resumo objetivo e conciso do conteúdo principal do documento (baseado no texto extraído). Coloque no campo 'summary'.
--   **Entidades Chave do Documento Original**: Identifique e liste as entidades chave (Pessoas, Organizações, Locais, Datas, Valores Monetários, etc.) encontradas no texto extraído. Coloque no campo 'keyEntities'.
--   **Sumário Formalizado dos Fatos (Estilo Boletim de Ocorrência)**: Com base no conteúdo do documento (texto extraído), elabore um resumo formalizado e objetivo dos fatos e informações cruciais. Coloque no campo 'clerkReport.formalizedSummary'.
--   **Informações Chave Estruturadas para Relatório Policial**: Categorize e detalhe as informações chave extraídas do documento (texto extraído). Preencha o campo 'clerkReport.keyInformationStructured'.
+**Erro: Nenhum conteúdo ou arquivo válido fornecido para análise.**
+Instruções para a IA: Preencha a resposta indicando que não foi fornecido conteúdo válido. Por exemplo, no campo 'summary', coloque "Nenhum dado de entrada válido para análise.". Deixe outros campos como 'extractedText', 'keyEntities' e as análises das Fases 1, 2 e 3 com indicações de ausência de dados ou observações.
 {{/if}}
 
 Siga rigorosamente as fases e instruções abaixo, aplicando-as ao conteúdo disponível (seja ele texto extraído de 'fileDataUri', 'Conteúdo para Análise', ou metadados de um arquivo não processável):
@@ -179,7 +174,7 @@ Como Investigador, seu foco é a análise profunda e minuciosa do material dispo
 -   **Pistas Potenciais**: Com base em suas observações, liste objetivamente as pistas concretas ou linhas de investigação potenciais que surgem da análise. Se nenhuma pista for identificada, pode ser uma lista vazia ou omitido (se o schema permitir).
 
 **Fase 2: Formalização e Extração (Perspectiva: Escrivão de Polícia)**
-(As instruções específicas para 'extractedText', 'language', 'summary', 'keyEntities' já foram dadas acima, dependendo se 'Conteúdo para Análise' ou 'fileDataUri' foi usado. As instruções abaixo aplicam-se ao texto/material resultante/disponível.)
+(As instruções específicas para 'extractedText', 'language', 'summary', 'keyEntities' já foram dadas acima, dependendo se 'isMediaInput' ou 'textContent' foi usado. As instruções abaixo aplicam-se ao texto/material resultante/disponível.)
 Como Escrivão, sua tarefa é processar o material de forma técnica e registrar as informações de maneira estruturada.
 -   **Sumário Formalizado dos Fatos (Estilo Boletim de Ocorrência)**: Com base no material (texto extraído ou metadados do arquivo), elabore um resumo formalizado e objetivo dos fatos e informações cruciais, como se estivesse redigindo a seção "Histórico" de um boletim de ocorrência ou um relatório policial inicial. Foco nos fatos, datas, locais e envolvidos. Se for baseado em metadados, descreva a natureza do arquivo e sua relevância hipotética. Coloque no campo 'clerkReport.formalizedSummary'.
 -   **Informações Chave Estruturadas para Relatório Policial**: Categorize e detalhe as informações chave extraídas do material que seriam essenciais para um relatório policial. Use categorias como: "Envolvido(s)", "Vítima(s)", "Suspeito(s)", "Data do Fato", "Horário Aproximado", "Local do Fato", "Objeto(s) Apreendido(s)/Relevante(s)", "Veículo(s) Envolvido(s)", "Testemunha(s) Potenciais", "Modus Operandi Descrito", "Nome do Arquivo", "Tipo de Arquivo". Preencha o campo 'clerkReport.keyInformationStructured'.
@@ -200,13 +195,25 @@ const analyzeDocumentFlowInternal = ai.defineFlow(
     inputSchema: AnalyzeDocumentInputSchema, 
     outputSchema: AnalyzeDocumentOutputSchema,
   },
-  async (input: AnalyzeDocumentInput) => { 
-    const {output} = await analyzeDocumentPrompt(input); 
+  async (rawInput: AnalyzeDocumentInput) => { 
+    const promptInput = {...rawInput};
+
+    if (promptInput.fileDataUri && !promptInput.textContent) { // Path for directly processable media
+        promptInput.isMediaInput = true;
+    } else { // Path for textContent (original text or system message for unprocessable files)
+        promptInput.isMediaInput = false;
+        // Ensure fileDataUri is not present if textContent is the source, to avoid confusion in the prompt or AI.
+        if (promptInput.textContent) {
+          delete promptInput.fileDataUri;
+        }
+    }
+    // In case neither is present, isMediaInput remains false, and the prompt's {{else}} branch handles it.
+    
+    const {output} = await analyzeDocumentPrompt(promptInput); 
     if (!output) {
       throw new Error("A análise do documento não retornou um resultado válido.");
     }
-    // Ensure investigatorAnalysis is always present, even if with default "empty" values if AI misses it.
-    // This helps satisfy the non-optional schema requirement more robustly.
+    
     if (!output.investigatorAnalysis) {
         output.investigatorAnalysis = {
             observations: "Nenhuma observação investigativa retornada pela IA.",
@@ -220,9 +227,8 @@ const analyzeDocumentFlowInternal = ai.defineFlow(
              output.investigatorAnalysis.potentialLeads = [];
         }
     }
-
-
     return output;
   }
 );
 
+    

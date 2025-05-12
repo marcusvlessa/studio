@@ -32,8 +32,8 @@ const KeyEntitySchema = z.object({
 });
 
 const InvestigatorAnalysisSchema = z.object({
-  observations: z.string().describe("Observações detalhadas do investigador sobre o documento, incluindo pistas, inconsistências, elementos suspeitos e conexões relevantes para uma investigação criminal."),
-  potentialLeads: z.array(z.string()).optional().describe("Lista de pistas potenciais ou linhas de investigação identificadas pelo investigador com base no documento."),
+  observations: z.string().describe("Observações detalhadas do investigador sobre o documento, incluindo pistas, inconsistências, elementos suspeitos e conexões relevantes para uma investigação criminal. Se nenhuma observação específica for encontrada, deve ser 'Nenhuma observação investigativa relevante.'."),
+  potentialLeads: z.array(z.string()).optional().describe("Lista de pistas potenciais ou linhas de investigação identificadas pelo investigador com base no documento. Pode ser uma lista vazia se nenhuma pista for encontrada."),
 });
 
 const ClerkReportSchema = z.object({
@@ -56,7 +56,7 @@ const AnalyzeDocumentOutputSchema = z.object({
   keyEntities: z.array(KeyEntitySchema).optional().describe('Uma lista de entidades chave (pessoas, organizações, locais, etc., e também Nome de Arquivo, Tipo MIME se relevante) identificadas no texto original do documento ou nos metadados/mensagem do sistema.'),
   language: z.string().optional().describe('O idioma principal detectado no documento (código ISO 639-1, ex: "pt", "en"). Pode ser "N/A" se não aplicável.'),
   
-  investigatorAnalysis: InvestigatorAnalysisSchema.optional().describe("Análise detalhada sob a perspectiva de um Investigador de Polícia/Agente de Inteligência."),
+  investigatorAnalysis: InvestigatorAnalysisSchema.describe("Análise detalhada sob a perspectiva de um Investigador de Polícia/Agente de Inteligência. Este campo é obrigatório."),
   clerkReport: ClerkReportSchema.optional().describe("Relatório estruturado e formalizado sob a perspectiva de um Escrivão de Polícia."),
   delegateAssessment: DelegateAssessmentSchema.optional().describe("Avaliação, direcionamento e sugestões de próximos passos sob a perspectiva de um Delegado de Polícia.")
 });
@@ -95,14 +95,17 @@ export async function analyzeDocument(input: AnalyzeDocumentInput): Promise<Anal
         processedFileDataUri = `data:application/pdf;base64,${base64Content}`;
       }
     }
+    
+    const isDirectlyProcessable = effectiveMimeTypeForCheck && DIRECTLY_PROCESSABLE_MIME_TYPES.includes(effectiveMimeTypeForCheck);
 
-    if (effectiveMimeTypeForCheck && DIRECTLY_PROCESSABLE_MIME_TYPES.includes(effectiveMimeTypeForCheck)) {
+    if (isDirectlyProcessable) {
       const fileProcessingInput: AnalyzeDocumentInput = {
         fileDataUri: processedFileDataUri, 
         fileName: fileName,
       };
       return analyzeDocumentFlowInternal(fileProcessingInput);
     } else {
+      // For non-directly processable files, we use a system message.
       const detectedMimeTypeInfo = originalMimeType || (isPdfByExtension ? 'pdf (por extensão)' : 'desconhecido');
       const systemMessage = `AVISO DO SISTEMA: O arquivo '${fileName}' (tipo MIME: ${detectedMimeTypeInfo}) foi fornecido. Seu conteúdo binário não pode ser processado/extraído diretamente pela IA neste fluxo. A análise subsequente deve se concentrar no nome do arquivo, tipo MIME informado e na natureza deste aviso. Tente extrair entidades do nome do arquivo e do tipo MIME.`;
       
@@ -119,6 +122,7 @@ export async function analyzeDocument(input: AnalyzeDocumentInput): Promise<Anal
     };
     return analyzeDocumentFlowInternal(textProcessingInput);
   } else {
+    // This case should ideally not be reached due to Zod refinement, but kept for robustness.
     throw new Error("Input inválido: é necessário fornecer fileDataUri ou textContent para a função analyzeDocument.");
   }
 }
@@ -170,9 +174,9 @@ Na Fase 2 (Escrivão):
 Siga rigorosamente as fases e instruções abaixo, aplicando-as ao conteúdo disponível (seja ele texto extraído de 'fileDataUri', 'Conteúdo para Análise', ou metadados de um arquivo não processável):
 
 **Fase 1: Análise Investigativa (Perspectiva: Investigador de Polícia / Agente de Inteligência)**
-Como Investigador, seu foco é a análise profunda e minuciosa do material disponível em busca de elementos relevantes para uma investigação.
--   **Observações do Investigador**: Descreva suas observações detalhadas. Identifique pistas (mesmo sutis), inconsistências, informações suspeitas, modus operandi, possíveis motivações, conexões não óbvias entre fatos ou pessoas, e qualquer outro elemento que possa ser crucial para elucidar um fato criminoso ou de interesse para a inteligência. Seja perspicaz e detalhista. Se estiver analisando apenas metadados de um arquivo não processável, foque no que a existência desse arquivo, seu nome e tipo podem significar.
--   **Pistas Potenciais**: Com base em suas observações, liste objetivamente as pistas concretas ou linhas de investigação potenciais que surgem da análise.
+Como Investigador, seu foco é a análise profunda e minuciosa do material disponível em busca de elementos relevantes para uma investigação. Esta fase é OBRIGATÓRIA.
+-   **Observações do Investigador**: Descreva suas observações detalhadas. Identifique pistas (mesmo sutis), inconsistências, informações suspeitas, modus operandi, possíveis motivações, conexões não óbvias entre fatos ou pessoas, e qualquer outro elemento que possa ser crucial para elucidar um fato criminoso ou de interesse para a inteligência. Seja perspicaz e detalhista. Se estiver analisando apenas metadados de um arquivo não processável, foque no que a existência desse arquivo, seu nome e tipo podem significar. Se não houver observações significativas, preencha com 'Nenhuma observação investigativa relevante.'.
+-   **Pistas Potenciais**: Com base em suas observações, liste objetivamente as pistas concretas ou linhas de investigação potenciais que surgem da análise. Se nenhuma pista for identificada, pode ser uma lista vazia ou omitido (se o schema permitir).
 
 **Fase 2: Formalização e Extração (Perspectiva: Escrivão de Polícia)**
 (As instruções específicas para 'extractedText', 'language', 'summary', 'keyEntities' já foram dadas acima, dependendo se 'Conteúdo para Análise' ou 'fileDataUri' foi usado. As instruções abaixo aplicam-se ao texto/material resultante/disponível.)
@@ -186,7 +190,7 @@ Como Delegado, com base nas análises e extrações das fases anteriores, forne�
 -   **Ações Sugeridas pelo Delegado**: Com base na sua avaliação, liste as próximas diligências investigativas, providências ou ações que você, como autoridade policial, recomendaria (ex: "Instaurar Inquérito Policial", "Registrar Boletim de Ocorrência", "Ouvir formalmente as partes mencionadas", "Solicitar imagens de câmeras de segurança", "Realizar busca e apreensão mediante autorização judicial", "Requisitar perícia no material X", "Verificar antecedentes criminais dos envolvidos", "Encaminhar para mediação/delegacia especializada"). Coloque no campo 'delegateAssessment.suggestedActions'.
 -   **Considerações Legais Preliminares do Delegado**: Mencione, if possível, considerações legales preliminares, como possíveis enquadramentos penais (tipificações criminais) que podem estar relacionados aos fatos, ou outras implicações jurídicas relevantes. (Ex: "Os fatos, em tese, podem configurar o crime de Estelionato (Art. 171, CP)", "Necessário apurar possível crime de Ameaça (Art. 147, CP)", "Verificar se há incidência da Lei Maria da Penha"). Coloque no campo 'delegateAssessment.legalConsiderations'.
 
-Certifique-se de que a saída JSON esteja completa e siga o schema definido. Se alguma informação específica não puder ser extraída ou inferida, deixe o campo correspondente vazio ou omita-o se for opcional, mas tente ser o mais completo possível.
+Certifique-se de que a saída JSON esteja completa e siga o schema definido, especialmente para a Fase 1 (Análise Investigativa) que é obrigatória. Se alguma informação específica não puder ser extraída ou inferida para campos opcionais, deixe o campo correspondente vazio ou omita-o, mas tente ser o mais completo possível.
 `,
 });
 
@@ -201,6 +205,23 @@ const analyzeDocumentFlowInternal = ai.defineFlow(
     if (!output) {
       throw new Error("A análise do documento não retornou um resultado válido.");
     }
+    // Ensure investigatorAnalysis is always present, even if with default "empty" values if AI misses it.
+    // This helps satisfy the non-optional schema requirement more robustly.
+    if (!output.investigatorAnalysis) {
+        output.investigatorAnalysis = {
+            observations: "Nenhuma observação investigativa retornada pela IA.",
+            potentialLeads: []
+        };
+    } else {
+        if (output.investigatorAnalysis.observations === undefined || output.investigatorAnalysis.observations === null || output.investigatorAnalysis.observations.trim() === "") {
+            output.investigatorAnalysis.observations = "Nenhuma observação investigativa específica fornecida.";
+        }
+        if (output.investigatorAnalysis.potentialLeads === undefined || output.investigatorAnalysis.potentialLeads === null) {
+             output.investigatorAnalysis.potentialLeads = [];
+        }
+    }
+
+
     return output;
   }
 );

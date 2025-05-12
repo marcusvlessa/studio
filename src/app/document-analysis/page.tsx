@@ -310,7 +310,7 @@ export default function DocumentAnalysisPage() {
                                 <Label className="font-semibold text-md">Observações Detalhadas:</Label>
                                 <Textarea value={analysisResult.investigatorAnalysis.observations} readOnly rows={8} className="bg-muted/50 mt-1" />
                             </div>
-                            {analysisResult.investigatorAnalysis.potentialLeads && analysisResult.investigatorAnalysis.potentialLeads.length > 0 && (
+                            {analysisResult.investigatorAnalysis.potentialLeads && analysisResult.investigatorAnalysis.potentialLeads.length > 0 ? (
                                 <div>
                                     <Label className="font-semibold text-md">Pistas Potenciais Identificadas:</Label>
                                     <ul className="list-disc list-inside space-y-1 bg-muted/30 p-3 rounded-md mt-1">
@@ -318,6 +318,11 @@ export default function DocumentAnalysisPage() {
                                             <li key={index}>{lead}</li>
                                         ))}
                                     </ul>
+                                </div>
+                            ) : (
+                                 <div>
+                                    <Label className="font-semibold text-md">Pistas Potenciais Identificadas:</Label>
+                                    <p className="text-sm text-muted-foreground italic mt-1 bg-muted/30 p-3 rounded-md">Nenhuma pista potencial específica identificada.</p>
                                 </div>
                             )}
                         </AccordionContent>
@@ -410,3 +415,4 @@ export default function DocumentAnalysisPage() {
     </div>
   );
 }
+

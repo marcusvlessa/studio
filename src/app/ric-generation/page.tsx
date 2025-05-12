@@ -1,39 +1,60 @@
 // src/app/ric-generation/page.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, Suspense } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { NotebookText, Loader2, Download } from "lucide-react";
+import { NotebookText, Loader2, Download, FolderKanban, Info } from "lucide-react";
 import { generateRic, type GenerateRicInput, type GenerateRicOutput } from "@/ai/flows/generate-ric-flow";
+import type { Case } from "../case-management/page"; // Import Case interface
+import { Alert as ShadAlert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
-// Mock case data - in a real app, this would come from a service or state management
-interface MockCase {
-  id: string;
-  name: string;
-  description: string;
-  analyses: Array<{ type: string, summary: string, sourceFileName?: string }>;
-}
-const mockCases: MockCase[] = [
-  { id: "case1", name: "Operação Vizinhança Segura", description: "Investigação sobre furtos em série no bairro X.", analyses: [{type: "Documento", summary: "Boletim de ocorrência inicial.", sourceFileName: "BO_Furto_123.pdf"}, {type: "Imagem", summary: "Foto de suspeito capturada por câmera de segurança.", sourceFileName:"suspeito.jpg"}]},
-  { id: "case2", name: "Caso Fraude Digital Alpha", description: "Apuração de esquema de phishing direcionado a clientes bancários.", analyses: [{type: "Áudio", summary: "Gravação de ligação com golpista.", sourceFileName: "ligacao_phishing.mp3"}, {type: "Documento", summary: "Relatório técnico de análise de malware.", sourceFileName: "malware_report.docx"}]},
-];
+const CASE_STORAGE_KEY = "investigationCases";
 
-export default function RicGenerationPage() {
-  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
+const getCasesFromStorage = (): Case[] => {
+  if (typeof window !== 'undefined') {
+    const storedCases = localStorage.getItem(CASE_STORAGE_KEY);
+    return storedCases ? JSON.parse(storedCases) : [];
+  }
+  return [];
+};
+
+function RicGenerationContent() {
+  const searchParams = useSearchParams();
+  const preselectedCaseId = searchParams.get("caseId");
+
+  const [allCases, setAllCases] = useState<Case[]>([]);
+  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(preselectedCaseId);
   const [generatedRic, setGeneratedRic] = useState<GenerateRicOutput | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
-  const selectedCaseDetails = mockCases.find(c => c.id === selectedCaseId);
+  useEffect(() => {
+    setAllCases(getCasesFromStorage());
+  }, []);
+  
+  useEffect(() => {
+    // If preselectedCaseId changes (e.g. navigation), update selectedCaseId
+    setSelectedCaseId(preselectedCaseId);
+    setGeneratedRic(null); // Clear previous RIC if case changes
+  }, [preselectedCaseId]);
+
+
+  const selectedCaseDetails = allCases.find(c => c.id === selectedCaseId);
 
   const handleGenerateRic = async () => {
     if (!selectedCaseId || !selectedCaseDetails) {
       toast({ variant: "destructive", title: "Erro", description: "Por favor, selecione um caso para gerar o RIC." });
       return;
+    }
+    if (selectedCaseDetails.relatedAnalyses.length === 0) {
+      toast({ variant: "default", title: "Nenhuma Análise", description: "Este caso não possui análises vinculadas para gerar um RIC." });
+      // Optionally, still proceed to generate a basic RIC structure
     }
 
     setIsLoading(true);
@@ -43,12 +64,17 @@ export default function RicGenerationPage() {
       const input: GenerateRicInput = {
         caseName: selectedCaseDetails.name,
         caseDescription: selectedCaseDetails.description,
-        analyses: selectedCaseDetails.analyses,
+        // Map CaseAnalysis to AnalysisItemSchema if necessary, current structures are compatible
+        analyses: selectedCaseDetails.relatedAnalyses.map(analysis => ({
+          type: analysis.type,
+          summary: analysis.summary,
+          sourceFileName: analysis.originalFileName,
+        })),
       };
       
-      const result = await generateRic(input);
+      const result = await generateRic(result);
       setGeneratedRic(result);
-      toast({ title: "RIC Gerado", description: "O Relatório de Investigação Criminal foi gerado com sucesso." });
+      toast({ title: "RIC Gerado", description: `RIC para o caso "${selectedCaseDetails.name}" foi gerado com sucesso.` });
 
     } catch (error) {
       console.error("Erro ao gerar RIC:", error);
@@ -56,6 +82,19 @@ export default function RicGenerationPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+  
+  const handleDownloadRic = () => {
+    if (!generatedRic || !selectedCaseDetails) return;
+    const blob = new Blob([generatedRic.reportContent], { type: 'text/plain;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `RIC_${selectedCaseDetails.name.replace(/\s+/g, '_')}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+    toast({title: "Download Iniciado", description: "O RIC está sendo baixado como arquivo de texto."});
   };
 
   return (
@@ -65,31 +104,49 @@ export default function RicGenerationPage() {
         <p className="text-muted-foreground">Selecione um caso para consolidar as informações e gerar um RIC automaticamente.</p>
       </header>
 
+      {!preselectedCaseId && allCases.length === 0 && (
+         <ShadAlert variant="destructive" className="mb-4">
+          <FolderKanban className="h-4 w-4" />
+          <AlertTitle>Nenhum Caso Disponível!</AlertTitle>
+          <AlertDescription>
+            Não há casos na <Link href="/case-management?newCase=true" className="font-semibold underline">Gestão de Casos</Link>. Crie um caso primeiro.
+          </AlertDescription>
+        </ShadAlert>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Selecionar Caso</CardTitle>
           <CardDescription>Escolha um caso existente para iniciar a geração do relatório.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Select onValueChange={setSelectedCaseId} value={selectedCaseId || undefined}>
+          <Select 
+            onValueChange={(value) => {setSelectedCaseId(value); setGeneratedRic(null);}} 
+            value={selectedCaseId || undefined}
+            disabled={allCases.length === 0}
+          >
             <SelectTrigger className="w-full md:w-1/2">
               <SelectValue placeholder="Selecione um caso..." />
             </SelectTrigger>
             <SelectContent>
-              {mockCases.map((c) => (
+              {allCases.map((c) => (
                 <SelectItem key={c.id} value={c.id}>
-                  {c.name}
+                  {c.name} ({c.relatedAnalyses.length} análises)
                 </SelectItem>
               ))}
-              {mockCases.length === 0 && <p className="p-2 text-sm text-muted-foreground">Nenhum caso disponível.</p>}
+              {allCases.length === 0 && <div className="p-2 text-sm text-muted-foreground text-center">Nenhum caso cadastrado. <Link href="/case-management?newCase=true" className="font-semibold underline">Crie um caso</Link>.</div>}
             </SelectContent>
           </Select>
           {selectedCaseDetails && (
-            <div className="p-4 border rounded-md bg-muted/50">
-                <h3 className="font-semibold">{selectedCaseDetails.name}</h3>
-                <p className="text-sm text-muted-foreground">{selectedCaseDetails.description}</p>
-                <p className="text-xs mt-1">Análises no caso: {selectedCaseDetails.analyses.length}</p>
-            </div>
+            <ShadAlert variant="default" className="bg-primary/5 border-primary/20">
+                <Info className="h-4 w-4 text-primary" />
+                <AlertTitle className="text-primary">Caso Selecionado: {selectedCaseDetails.name}</AlertTitle>
+                <AlertDescription>
+                    {selectedCaseDetails.description || "Sem descrição detalhada."}
+                    <br/>
+                    Análises vinculadas: {selectedCaseDetails.relatedAnalyses.length}
+                </AlertDescription>
+            </ShadAlert>
           )}
         </CardContent>
         <CardFooter>
@@ -112,20 +169,28 @@ export default function RicGenerationPage() {
       {generatedRic && (
         <Card>
           <CardHeader>
-            <CardTitle>RIC Gerado</CardTitle>
-            <CardDescription>Abaixo está o conteúdo do Relatório de Investigação Criminal.</CardDescription>
+            <CardTitle>RIC Gerado para: {selectedCaseDetails?.name}</CardTitle>
+            <CardDescription>Abaixo está o conteúdo do Relatório de Investigação Criminal. As análises são baseadas nos dados salvos no caso.</CardDescription>
           </CardHeader>
           <CardContent>
-            <Textarea value={generatedRic.reportContent} readOnly rows={20} className="bg-muted/50 text-sm font-mono" />
+            <Textarea value={generatedRic.reportContent} readOnly rows={25} className="bg-muted/50 text-sm font-mono" />
           </CardContent>
           <CardFooter>
-            <Button onClick={() => alert("Funcionalidade de download ainda não implementada.")}>
-                <Download className="mr-2 h-4 w-4" /> Baixar RIC (PDF)
+            <Button onClick={handleDownloadRic}>
+                <Download className="mr-2 h-4 w-4" /> Baixar RIC (TXT)
             </Button>
           </CardFooter>
         </Card>
       )}
-       <p className="text-xs text-muted-foreground text-center mt-4">Nota: A seleção de casos é baseada em dados de exemplo (mock). A integração real com a Gestão de Casos é necessária.</p>
+       <p className="text-xs text-muted-foreground text-center mt-4">Nota: A funcionalidade de vincular e salvar análises de outros módulos aos casos é conceitual e usa LocalStorage. Para persistência real, seria necessária integração com backend.</p>
     </div>
   );
+}
+
+export default function RicGenerationPage() {
+  return (
+    <Suspense fallback={<div>Carregando...</div>}>
+      <RicGenerationContent />
+    </Suspense>
+  )
 }

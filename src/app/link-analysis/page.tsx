@@ -1,24 +1,29 @@
+// src/app/link-analysis/page.tsx
 "use client";
 
-import { useState, type ChangeEvent, useRef } from "react";
+import { useState, type ChangeEvent, useRef, useEffect, Suspense } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { GitFork, Search, RotateCcw, Loader2, FileText, AlertCircle, HelpCircle } from "lucide-react";
+import { GitFork, Search, RotateCcw, Loader2, FileText, AlertCircle, HelpCircle, FolderKanban, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { findEntityRelationships, type FindEntityRelationshipsInput, type FindEntityRelationshipsOutput } from "@/ai/flows/find-entity-relationships";
 import { analyzeDocument, type AnalyzeDocumentInput } from "@/ai/flows/analyze-document-flow";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert as ShadAlert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { LinkAnalysisGraph } from "@/components/link-analysis/LinkAnalysisGraph";
 
 type AnalysisContextType = "Geral" | "Telefonia" | "Financeira" | "Pessoas" | "Digital";
 
-export default function LinkAnalysisPage() {
+function LinkAnalysisContent() {
+  const searchParams = useSearchParams();
+  const caseId = searchParams.get("caseId");
+  const caseName = searchParams.get("caseName");
+
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [relationships, setRelationships] = useState<FindEntityRelationshipsOutput['relationships'] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -28,6 +33,8 @@ export default function LinkAnalysisPage() {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const isCaseSelected = !!caseId;
+
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
@@ -35,11 +42,9 @@ export default function LinkAnalysisPage() {
       const commonMimeTypes = ["application/pdf", "text/csv", "text/plain", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"];
       
       let fileExtensionSupported = allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext)) || commonMimeTypes.includes(file.type.toLowerCase());
-      // Browsers might report application/octet-stream for many binary files, allow if extension matches.
       if (file.type === "application/octet-stream" && allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext))) {
         fileExtensionSupported = true;
       }
-
 
       if (fileExtensionSupported) {
         setSelectedFile(file);
@@ -73,7 +78,6 @@ export default function LinkAnalysisPage() {
     const cnpjPattern = /^\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}$/;
     const moneyPattern = /(?:R\$|\$|€|£)\s*\d+(?:[,.]\d{1,2})*/;
 
-
     lines.forEach(line => {
       const trimmedLine = line.trim();
       if (!trimmedLine) return;
@@ -96,31 +100,14 @@ export default function LinkAnalysisPage() {
         const cleanedCell = cell.replace(/^["']|["']$/g, ''); 
 
         let matchedSpecific = false;
-        if (phonePattern.test(cleanedCell)) {
-          entities.add(cleanedCell);
-          matchedSpecific = true;
-        } else if (imeiPattern.test(cleanedCell)) {
-          entities.add(cleanedCell);
-          matchedSpecific = true;
-        } else if (ipPattern.test(cleanedCell)) {
-          entities.add(cleanedCell);
-          matchedSpecific = true;
-        } else if (emailPattern.test(cleanedCell)) {
-          entities.add(cleanedCell.toLowerCase());
-          matchedSpecific = true;
-        } else if (plateOldPattern.test(cleanedCell) || plateMercosulPattern.test(cleanedCell)) {
-          entities.add(cleanedCell.toUpperCase()); 
-          matchedSpecific = true;
-        } else if (cpfPattern.test(cleanedCell)) {
-            entities.add(cleanedCell);
-            matchedSpecific = true;
-        } else if (cnpjPattern.test(cleanedCell)) {
-            entities.add(cleanedCell);
-            matchedSpecific = true;
-        } else if (moneyPattern.test(cleanedCell)) {
-            entities.add(cleanedCell); 
-            matchedSpecific = true;
-        }
+        if (phonePattern.test(cleanedCell)) { entities.add(cleanedCell); matchedSpecific = true; }
+        else if (imeiPattern.test(cleanedCell)) { entities.add(cleanedCell); matchedSpecific = true; }
+        else if (ipPattern.test(cleanedCell)) { entities.add(cleanedCell); matchedSpecific = true; }
+        else if (emailPattern.test(cleanedCell)) { entities.add(cleanedCell.toLowerCase()); matchedSpecific = true; }
+        else if (plateOldPattern.test(cleanedCell) || plateMercosulPattern.test(cleanedCell)) { entities.add(cleanedCell.toUpperCase()); matchedSpecific = true; }
+        else if (cpfPattern.test(cleanedCell)) { entities.add(cleanedCell); matchedSpecific = true; }
+        else if (cnpjPattern.test(cleanedCell)) { entities.add(cleanedCell); matchedSpecific = true; }
+        else if (moneyPattern.test(cleanedCell)) { entities.add(cleanedCell); matchedSpecific = true; }
         
         if (!matchedSpecific) {
           if (cleanedCell.length >= 2 && cleanedCell.length < 100 && !/^\W+$/.test(cleanedCell) && (isNaN(Number(cleanedCell)) || cleanedCell.length > 4 || /^[a-zA-Z0-9\s-]+$/.test(cleanedCell) )) {
@@ -129,12 +116,14 @@ export default function LinkAnalysisPage() {
         }
       });
     });
-    
     return Array.from(entities);
   };
 
-
   const handleAnalyze = async () => {
+    if (!isCaseSelected) {
+      toast({ variant: "destructive", title: "Nenhum Caso Selecionado", description: "Vá para Gestão de Casos e selecione um caso." });
+      return;
+    }
     if (!selectedFile) {
       toast({ variant: "destructive", title: "Nenhum Arquivo Fornecido", description: "Por favor, envie um arquivo para análise." });
       return;
@@ -153,71 +142,41 @@ export default function LinkAnalysisPage() {
       if (selectedFile.type === "text/csv" || selectedFile.type === "text/plain" || selectedFile.name.toLowerCase().endsWith(".txt") || selectedFile.name.toLowerCase().endsWith(".csv")) {
         setProgress(20);
         setProcessingMessage(`Lendo arquivo de texto: ${selectedFile.name}...`);
-        try {
-            extractedTextForParsing = await selectedFile.text();
-            successfullyExtractedActualContent = true; 
-            toast({ title: "Leitura de Texto Concluída", description: `Conteúdo de ${selectedFile.name} lido.` });
-        } catch (textReadError) {
-            console.error("Erro ao ler arquivo de texto:", textReadError);
-            toast({ variant: "destructive", title: "Erro ao Ler Arquivo de Texto", description: `Não foi possível ler o conteúdo do arquivo ${selectedFile.name}.` });
-            setIsLoading(false); 
-            setProgress(0);
-            return; 
-        }
+        extractedTextForParsing = await selectedFile.text();
+        successfullyExtractedActualContent = true; 
+        toast({ title: "Leitura de Texto Concluída", description: `Conteúdo de ${selectedFile.name} lido.` });
       } else { 
         setProgress(10);
-        setProcessingMessage(`Preparando arquivo ${selectedFile.name} para análise pela IA...`);
-        
-        const reader = new FileReader();
-        reader.readAsDataURL(selectedFile);
-        
-        await new Promise<void>((resolve, reject) => {
-            reader.onloadend = async (e) => {
-                const fileDataUri = e.target?.result as string;
-                if (!fileDataUri) {
-                    toast({ variant: "destructive", title: "Erro ao Ler Arquivo", description: "Não foi possível ler o conteúdo do arquivo."});
-                    reject(new Error(`Erro ao ler arquivo ${selectedFile.name}: URI de dados vazia.`));
-                    return;
-                }
-                setProgress(30);
-                setProcessingMessage("Processando arquivo com IA (pode levar um momento)...");
-                try {
-                    const docInput: AnalyzeDocumentInput = { fileDataUri, fileName: selectedFile.name };
-                    const docResult = await analyzeDocument(docInput); 
-                    
-                    extractedTextForParsing = docResult.extractedText || ""; 
-
-                    if (docResult.extractedText && !docResult.extractedText.startsWith("AVISO DO SISTEMA:")) {
-                        successfullyExtractedActualContent = true;
-                        toast({ title: "Extração de Texto do Arquivo Concluída", description: `Texto extraído de ${selectedFile.name}.` });
-                    } else {
-                        successfullyExtractedActualContent = false; 
-                        toast({ 
-                            variant: "default", 
-                            title: "Extração de Conteúdo do Arquivo Limitada", 
-                            description: `O conteúdo de '${selectedFile.name}' (tipo: ${selectedFile.type || 'desconhecido'}) não pôde ser lido/extraído diretamente pela IA. A análise prosseguirá com base em metadados (como nome do arquivo).`,
-                            duration: 8000
-                        });
-                    }
-                    
-                    if(docResult.keyEntities && docResult.keyEntities.length > 0){
-                        entitiesFromAI = docResult.keyEntities.map(ke => ke.value);
-                        if(!successfullyExtractedActualContent){
-                             toast({title: "Entidades de Metadados", description: `IA identificou ${entitiesFromAI.length} entidades (provavelmente do nome do arquivo ou tipo).`});
-                        }
-                    }
-                    resolve();
-                } catch (extractionError: any) {
-                    console.error(`Erro na análise do documento pela IA: ${extractionError.message}`, extractionError);
-                    toast({ variant: "destructive", title: "Erro na Análise do Documento pela IA", description: (extractionError instanceof Error ? extractionError.message : `Falha ao processar o arquivo ${selectedFile.name} com IA.`) });
-                    reject(extractionError);
-                }
-            };
-            reader.onerror = (errorEvent) => { 
-                 toast({ variant: "destructive", title: "Erro ao Ler Arquivo", description: "Ocorreu um erro ao tentar ler o arquivo."});
-                 reject(new Error(`Erro no leitor de arquivo ao processar ${selectedFile.name}.`));
-            }
+        setProcessingMessage(`Preparando arquivo ${selectedFile.name} para extração de texto pela IA...`);
+        const fileDataUri = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(selectedFile);
+            reader.onloadend = (e) => resolve(e.target?.result as string);
+            reader.onerror = (errorEvent) => reject(new Error(`Erro no leitor de arquivo ao processar ${selectedFile.name}.`));
         });
+        if (!fileDataUri) throw new Error("Não foi possível ler o conteúdo do arquivo.");
+
+        setProgress(30);
+        setProcessingMessage("Extraindo texto do arquivo com IA (pode levar um momento)...");
+        const docInput: AnalyzeDocumentInput = { fileDataUri, fileName: selectedFile.name };
+        const docResult = await analyzeDocument(docInput); 
+        
+        extractedTextForParsing = docResult.extractedText || ""; 
+        if (docResult.extractedText && !docResult.extractedText.startsWith("AVISO DO SISTEMA:")) {
+            successfullyExtractedActualContent = true;
+            toast({ title: "Extração de Texto do Arquivo Concluída", description: `Texto extraído de ${selectedFile.name}.` });
+        } else {
+            successfullyExtractedActualContent = false; 
+            toast({ 
+                variant: "default", 
+                title: "Extração de Conteúdo do Arquivo Limitada", 
+                description: `O conteúdo de '${selectedFile.name}' (tipo: ${selectedFile.type || 'desconhecido'}) não pôde ser lido/extraído diretamente. A análise prosseguirá com base em metadados (nome do arquivo e tipo MIME).`,
+                duration: 8000
+            });
+        }
+        if(docResult.keyEntities && docResult.keyEntities.length > 0){
+            entitiesFromAI = docResult.keyEntities.map(ke => ke.value);
+        }
       }
 
       setProgress(50);
@@ -229,19 +188,14 @@ export default function LinkAnalysisPage() {
       }
 
       const combinedEntities = new Set([...entitiesFromTextParsing, ...entitiesFromAI]);
-      const finalEntities = Array.from(combinedEntities);
+      const finalEntities = Array.from(combinedEntities).filter(e => e.trim() !== "");
       
-      if (finalEntities.length > 0) {
-          let entitiesSourceMessage = `Total de ${finalEntities.length} entidades únicas identificadas `;
-          if (entitiesFromTextParsing.length > 0 && entitiesFromAI.length > 0 && successfullyExtractedActualContent) {
-              const uniqueFromAI = entitiesFromAI.filter(e => !entitiesFromTextParsing.includes(e)).length;
-              entitiesSourceMessage += `(${entitiesFromTextParsing.length} do conteúdo, ${uniqueFromAI} de metadados).`;
-          } else if (entitiesFromTextParsing.length > 0 && successfullyExtractedActualContent) {
-              entitiesSourceMessage += `(extraídas do conteúdo do arquivo).`;
-          } else if (entitiesFromAI.length > 0) {
-              entitiesSourceMessage += `(extraídas de metadados do arquivo).`;
-          }
-          toast({ title: "Entidades Identificadas", description: entitiesSourceMessage });
+      if (finalEntities.length === 0 && selectedFile.name) {
+        // Fallback to using filename if no other entities found
+        finalEntities.push(selectedFile.name);
+         toast({ title: "Entidades Baseadas em Metadados", description: `Nenhuma entidade extraída do conteúdo. Usando nome do arquivo "${selectedFile.name}" para análise.` });
+      } else if (finalEntities.length > 0) {
+          toast({ title: "Entidades Identificadas", description: `Total de ${finalEntities.length} entidades únicas identificadas para o caso "${caseName}".` });
       } else {
           toast({ variant: "default", title: "Nenhuma Entidade Identificada", description: `Não foram identificadas entidades em '${selectedFile.name}'. A análise de vínculos pode não encontrar resultados.` });
       }
@@ -249,39 +203,21 @@ export default function LinkAnalysisPage() {
       setProgress(70);
       setProcessingMessage(finalEntities.length > 0 ? `Analisando ${finalEntities.length} entidades com IA (Contexto: ${analysisContext})...` : `Tentando análise de vínculos (sem entidades primárias identificadas)...`);
       
-      const relationshipInput: FindEntityRelationshipsInput = { entities: finalEntities, analysisContext };
+      const relationshipInput: FindEntityRelationshipsInput = { entities: finalEntities.length > 0 ? finalEntities : [selectedFile.name], analysisContext }; // Ensure entities array is not empty
       const result = await findEntityRelationships(relationshipInput);
       setRelationships(result.relationships);
       setProgress(100);
 
+      // TODO: Persist analysisResult (relationships) to the selected case
       if (result.relationships && result.relationships.length > 0) {
-        let description = `Foram encontrados ${result.relationships.length} vínculos potenciais.`;
-        if (!successfullyExtractedActualContent && finalEntities.length <= 3 && finalEntities.every(e => e === selectedFile.name || e === selectedFile.type || e === analysisContext)) {
-             description += ` Nota: A extração de conteúdo do arquivo '${selectedFile.name}' foi limitada. Os vínculos foram baseados em metadados (nome/tipo do arquivo) e contexto.`;
-             toast({
-                variant: "default",
-                title: "Análise de Vínculos Concluída (Baseada em Metadados)",
-                description: description,
-                duration: 10000,
-             });
-        } else {
-            toast({ title: "Análise de Vínculos Concluída", description: description });
-        }
-      } else if (finalEntities.length > 0) {
-         let detailMessage = "Nenhum vínculo direto foi encontrado para as entidades fornecidas.";
-         if (!successfullyExtractedActualContent) {
-            detailMessage += ` A extração de conteúdo do arquivo '${selectedFile.name}' foi limitada, e a análise se baseou principalmente em metadados. Para uma análise mais profunda do conteúdo, utilize arquivos TXT, CSV ou PDF textual.`;
-         }
-         toast({ title: "Análise de Vínculos Concluída", description: detailMessage, duration: 10000 });
-      } else { 
-        toast({ title: "Análise Concluída", description: `Não foram encontradas entidades em '${selectedFile.name}' e, consequentemente, nenhum vínculo. Verifique o conteúdo e formato do arquivo.` });
+        toast({ title: "Análise de Vínculos Concluída", description: `Encontrados ${result.relationships.length} vínculos para o caso "${caseName}". (Persistência pendente)` });
+      } else {
+         toast({ title: "Análise de Vínculos Concluída", description: `Nenhum vínculo encontrado para o caso "${caseName}". (Persistência pendente)` });
       }
 
     } catch (error: any) { 
       console.error("Erro na análise de vínculos:", error);
-      if (!toast.toasts.some(t => t.title?.toString().includes("Erro"))) {
-        toast({ variant: "destructive", title: "Falha na Análise de Vínculos", description: error instanceof Error ? error.message : "Ocorreu um erro desconhecido." });
-      }
+      toast({ variant: "destructive", title: "Falha na Análise de Vínculos", description: error instanceof Error ? error.message : "Ocorreu um erro desconhecido." });
     } finally {
       setIsLoading(false); 
     }
@@ -304,8 +240,28 @@ export default function LinkAnalysisPage() {
     <div className="flex flex-col gap-6">
       <header className="mb-4">
         <h1 className="text-3xl font-bold tracking-tight">Módulo de Análise de Vínculos</h1>
-        <p className="text-muted-foreground">Envie arquivos com entidades (nomes, telefones, etc.) para identificar e visualizar seus relacionamentos. A IA tentará extrair texto de PDFs e outros formatos, mas a qualidade da extração pode variar.</p>
+        <p className="text-muted-foreground">Envie arquivos com entidades para identificar e visualizar seus relacionamentos.</p>
       </header>
+
+      {!isCaseSelected && (
+        <ShadAlert variant="destructive" className="mb-4">
+          <FolderKanban className="h-4 w-4" />
+          <AlertTitle>Nenhum Caso Selecionado!</AlertTitle>
+          <AlertDescription>
+            Por favor, vá para a página de <Link href="/case-management" className="font-semibold underline">Gestão de Casos</Link> para selecionar ou criar um caso antes de prosseguir com a análise.
+          </AlertDescription>
+        </ShadAlert>
+      )}
+
+      {isCaseSelected && (
+         <ShadAlert variant="default" className="mb-4 bg-primary/5 border-primary/20">
+            <Info className="h-4 w-4 text-primary" />
+            <AlertTitle className="text-primary">Analisando para o Caso: {decodeURIComponent(caseName || "Não especificado")}</AlertTitle>
+            <AlertDescription>
+              Qualquer análise realizada aqui será conceitualmente vinculada a este caso.
+            </AlertDescription>
+          </ShadAlert>
+      )}
 
       <Card>
         <CardHeader>
@@ -323,7 +279,7 @@ export default function LinkAnalysisPage() {
               accept=".csv,.txt,.pdf,.xls,.xlsx,.doc,.docx,.anb,.anx,text/csv,text/plain,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/octet-stream" 
               onChange={handleFileChange} 
               ref={fileInputRef} 
-              disabled={isLoading}
+              disabled={isLoading || !isCaseSelected}
             />
           </div>
           <div className="grid w-full max-w-sm items-center gap-1.5">
@@ -331,7 +287,7 @@ export default function LinkAnalysisPage() {
             <Select 
                 value={analysisContext} 
                 onValueChange={(value: string) => setAnalysisContext(value as AnalysisContextType)}
-                disabled={isLoading}
+                disabled={isLoading || !isCaseSelected}
             >
                 <SelectTrigger id="analysis-context" className="w-full">
                     <SelectValue placeholder="Selecione o contexto..." />
@@ -363,7 +319,7 @@ export default function LinkAnalysisPage() {
           )}
         </CardContent>
         <CardFooter className="gap-2">
-          <Button onClick={handleAnalyze} disabled={!selectedFile || isLoading}>
+          <Button onClick={handleAnalyze} disabled={!selectedFile || isLoading || !isCaseSelected}>
             {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
             {isLoading ? "Analisando..." : "Encontrar Vínculos"}
           </Button>
@@ -373,18 +329,19 @@ export default function LinkAnalysisPage() {
         </CardFooter>
       </Card>
 
-      <Alert variant="default" className="mt-4">
+      <ShadAlert variant="default" className="mt-4">
         <HelpCircle className="h-4 w-4" />
         <AlertTitle>Dicas para Melhor Análise</AlertTitle>
         <AlertDescription>
           <ul className="list-disc list-inside text-xs space-y-1">
-            <li>Para arquivos <strong>TXT/CSV</strong>: entidades devem ser separadas por linha ou delimitadores comuns (vírgula, ponto e vírgula, tabulação).</li>
-            <li>Para <strong>PDF, DOCX, XLSX</strong>: a IA tentará extrair o texto. PDFs baseados em imagem (escaneados) ou arquivos Office muito complexos/antigos podem ter extração limitada. PDFs textuais e formatos OOXML (DOCX, XLSX modernos) tendem a funcionar melhor.</li>
-            <li>Arquivos <strong>ANB/ANX, XLS (binário), DOC (binário)</strong> e outros formatos binários proprietários: a análise se baseará primariamente nos metadados (nome do arquivo, tipo) pois o conteúdo interno geralmente não pode ser lido diretamente pela IA.</li>
+            <li>Para arquivos <strong>TXT/CSV</strong>: entidades devem ser separadas por linha ou delimitadores comuns.</li>
+            <li>Para <strong>PDF, DOCX, XLSX</strong>: a IA tentará extrair o texto. PDFs baseados em imagem ou arquivos Office complexos podem ter extração limitada.</li>
+            <li>Arquivos <strong>ANB/ANX</strong> e outros formatos binários: a análise se baseará em metadados (nome/tipo do arquivo) pois o conteúdo interno geralmente não é lido pela IA.</li>
             <li>Selecionar um <strong>Contexto da Análise</strong> pode ajudar a IA a focar em tipos de entidades e relações relevantes.</li>
+            <li>Se a extração de texto falhar, a análise de vínculos usará o nome do arquivo como uma entidade.</li>
           </ul>
         </AlertDescription>
-      </Alert>
+      </ShadAlert>
 
       {relationships && relationships.length > 0 && !isLoading && (
         <LinkAnalysisGraph relationshipsData={relationships} />
@@ -395,10 +352,18 @@ export default function LinkAnalysisPage() {
             <CardContent className="p-6 flex flex-col items-center justify-center min-h-[200px]">
                 <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
                 <p className="text-muted-foreground text-center">Nenhum vínculo direto encontrado para as entidades identificadas no arquivo.</p>
-                <p className="text-xs text-muted-foreground mt-1 text-center">Verifique se o arquivo está formatado corretamente e contém dados válidos, ou se o tipo de arquivo permitiu extração de conteúdo textual. Para arquivos complexos, a análise pode ter se baseado apenas em metadados.</p>
+                <p className="text-xs text-muted-foreground mt-1 text-center">Verifique se o arquivo está formatado corretamente e contém dados válidos, ou se o tipo de arquivo permitiu extração de conteúdo textual.</p>
             </CardContent>
         </Card>
       )}
     </div>
   );
+}
+
+export default function LinkAnalysisPage() {
+  return (
+    <Suspense fallback={<div>Carregando...</div>}>
+      <LinkAnalysisContent />
+    </Suspense>
+  )
 }

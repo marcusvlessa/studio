@@ -1,24 +1,30 @@
+// src/app/image-analysis/page.tsx
 "use client";
 
-import { useState, type ChangeEvent, useRef } from "react";
+import { useState, type ChangeEvent, useRef, useEffect, Suspense } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { FileImage, Search, RotateCcw, Loader2, Sparkles, Smile } from "lucide-react"; 
+import { FileImage, Search, RotateCcw, Loader2, Sparkles, Smile, FolderKanban, Info } from "lucide-react"; 
 import { useToast } from "@/hooks/use-toast";
 import { analyzeImage, type AnalyzeImageInput, type AnalyzeImageOutput } from "@/ai/flows/analyze-image";
 import Image from "next/image"; 
-import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-
+import { Alert as ShadAlert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const MAX_FILE_SIZE_MB = 4;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
-export default function ImageAnalysisPage() {
+function ImageAnalysisContent() {
+  const searchParams = useSearchParams();
+  const caseId = searchParams.get("caseId");
+  const caseName = searchParams.get("caseName");
+
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalyzeImageOutput | null>(null);
@@ -26,6 +32,8 @@ export default function ImageAnalysisPage() {
   const [progress, setProgress] = useState(0);
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const isCaseSelected = !!caseId;
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -68,6 +76,10 @@ export default function ImageAnalysisPage() {
   };
 
   const handleAnalyze = async () => {
+    if (!isCaseSelected) {
+      toast({ variant: "destructive", title: "Nenhum Caso Selecionado", description: "Vá para Gestão de Casos e selecione um caso." });
+      return;
+    }
     if (!selectedFile || !imagePreview) {
       toast({ variant: "destructive", title: "Nenhuma Imagem Selecionada", description: "Por favor, selecione um arquivo de imagem para analisar." });
       return;
@@ -80,27 +92,25 @@ export default function ImageAnalysisPage() {
     let currentProgress = 0;
     const progressInterval = setInterval(() => {
       currentProgress += 5;
-      if (currentProgress <= 30) { 
+      if (currentProgress <= 90) { 
         setProgress(currentProgress);
-      } else {
-        // Hold progress
       }
-    }, 200);
+    }, 300);
 
     try {
-      // Ensure imagePreview is not null, although previous check should cover it.
       if (!imagePreview) {
           throw new Error("Pré-visualização da imagem não está disponível.");
       }
       const photoDataUri = imagePreview;
       
-      setProgress(50); // Image ready, AI call starting
+      setProgress(50); 
 
       const input: AnalyzeImageInput = { photoDataUri };
       const result = await analyzeImage(input);
       setAnalysisResult(result);
       setProgress(100);
-      toast({ title: "Análise de Imagem Concluída", description: "Imagem processada com sucesso." });
+      // TODO: Persist analysisResult to the selected case
+      toast({ title: "Análise de Imagem Concluída", description: `Imagem "${selectedFile.name}" processada para o caso "${caseName}". (Persistência pendente)` });
     } catch (error) {
       console.error("Erro na análise de imagem:", error);
       toast({ variant: "destructive", title: "Falha na Análise", description: error instanceof Error ? error.message : "Ocorreu um erro desconhecido." });
@@ -131,6 +141,26 @@ export default function ImageAnalysisPage() {
         <p className="text-muted-foreground">Envie imagens para análise por IA, geração de descrição, leitura de placas, sugestões de melhoria e detecção facial.</p>
       </header>
 
+      {!isCaseSelected && (
+        <ShadAlert variant="destructive" className="mb-4">
+          <FolderKanban className="h-4 w-4" />
+          <AlertTitle>Nenhum Caso Selecionado!</AlertTitle>
+          <AlertDescription>
+            Por favor, vá para a página de <Link href="/case-management" className="font-semibold underline">Gestão de Casos</Link> para selecionar ou criar um caso antes de prosseguir com a análise.
+          </AlertDescription>
+        </ShadAlert>
+      )}
+
+      {isCaseSelected && (
+         <ShadAlert variant="default" className="mb-4 bg-primary/5 border-primary/20">
+            <Info className="h-4 w-4 text-primary" />
+            <AlertTitle className="text-primary">Analisando para o Caso: {decodeURIComponent(caseName || "Não especificado")}</AlertTitle>
+            <AlertDescription>
+              Qualquer análise realizada aqui será conceitualmente vinculada a este caso.
+            </AlertDescription>
+          </ShadAlert>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Enviar Imagem</CardTitle>
@@ -139,7 +169,7 @@ export default function ImageAnalysisPage() {
         <CardContent className="space-y-4">
           <div className="grid w-full max-w-sm items-center gap-1.5">
             <Label htmlFor="image-upload">Arquivo de Imagem</Label>
-            <Input id="image-upload" type="file" accept="image/*" onChange={handleFileChange} ref={fileInputRef} disabled={isLoading}/>
+            <Input id="image-upload" type="file" accept="image/*" onChange={handleFileChange} ref={fileInputRef} disabled={isLoading || !isCaseSelected}/>
           </div>
           {selectedFile && (
              <p className="text-sm text-muted-foreground flex items-center">
@@ -151,7 +181,7 @@ export default function ImageAnalysisPage() {
             <div className="mt-4">
               <Label>Pré-visualização da Imagem:</Label>
               <div className="mt-2 w-full max-w-md aspect-video relative overflow-hidden rounded-md border shadow-sm bg-muted/30">
-                <Image src={imagePreview} alt="Preview" layout="fill" objectFit="contain" />
+                <Image src={imagePreview} alt="Preview" layout="fill" objectFit="contain" data-ai-hint="foto imagem" />
               </div>
             </div>
           )}
@@ -160,17 +190,15 @@ export default function ImageAnalysisPage() {
               <Label>Progresso da Análise:</Label>
               <Progress value={progress} className="w-full" />
               <p className="text-sm text-muted-foreground text-center">
-                {progress}%
-                {progress < 35 && " (Iniciando...)"}
-                {progress >= 35 && progress < 50 && " (Preparando imagem...)"}
-                {progress >= 50 && progress < 100 && " (Analisando com IA...)"}
-                {progress === 100 && " (Concluído!)"}
+                {progress <= 50 && "Preparando imagem..."}
+                {progress > 50 && progress < 100 && "Analisando com IA..."}
+                {progress === 100 && "Concluído!"}
               </p>
             </div>
           )}
         </CardContent>
         <CardFooter className="gap-2">
-          <Button onClick={handleAnalyze} disabled={!selectedFile || isLoading}>
+          <Button onClick={handleAnalyze} disabled={!selectedFile || isLoading || !isCaseSelected}>
             {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
             {isLoading ? "Analisando Imagem..." : "Analisar Imagem"}
           </Button>
@@ -184,6 +212,7 @@ export default function ImageAnalysisPage() {
         <Card>
           <CardHeader>
             <CardTitle>Resultados da Análise</CardTitle>
+             {caseName && <CardDescription>Referente ao caso: {decodeURIComponent(caseName)}</CardDescription>}
           </CardHeader>
           <CardContent className="space-y-6">
             <div>
@@ -228,9 +257,9 @@ export default function ImageAnalysisPage() {
                                         <li key={index}>
                                             Face {index + 1}: 
                                             {detail.confidence && ` Confiança: ${(detail.confidence * 100).toFixed(0)}%.`}
-                                            {detail.attributes && Object.keys(detail.attributes).length > 0 && ` Atributos: ${Object.entries(detail.attributes).map(([key, value]) => `${key}: ${value}`).join(', ')}.`}
+                                            {detail.attributesDescription && ` Atributos: ${detail.attributesDescription}.`}
                                             {detail.boundingBox && ` Posição: [${detail.boundingBox.join(', ')}].`}
-                                            {(!detail.confidence && (!detail.attributes || Object.keys(detail.attributes).length === 0) && !detail.boundingBox) && " Sem detalhes adicionais."}
+                                            {(!detail.confidence && !detail.attributesDescription && !detail.boundingBox) && " Sem detalhes adicionais."}
                                         </li>
                                     ))}
                                     </ul>
@@ -250,3 +279,10 @@ export default function ImageAnalysisPage() {
   );
 }
 
+export default function ImageAnalysisPage() {
+  return (
+    <Suspense fallback={<div>Carregando...</div>}>
+      <ImageAnalysisContent />
+    </Suspense>
+  )
+}

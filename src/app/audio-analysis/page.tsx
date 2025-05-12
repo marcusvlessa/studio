@@ -1,19 +1,23 @@
+// src/app/audio-analysis/page.tsx
 "use client";
 
-import { useState, type ChangeEvent, useRef, useEffect } from "react";
+import { useState, type ChangeEvent, useRef, useEffect, Suspense } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { Mic, FileAudio, RotateCcw, Loader2, List, AlertCircle, CheckCircle, Files, Combine, BookText } from "lucide-react";
+import { Mic, FileAudio, RotateCcw, Loader2, List, AlertCircle, CheckCircle, Files, Combine, BookText, FolderKanban, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { transcribeAudio, type TranscribeAudioInput, type TranscribeAudioOutput } from "@/ai/flows/transcribe-audio";
-import { consolidateAudioAnalyses, type ConsolidateAudioAnalysesInput, type ConsolidateAudioAnalysesOutput } from "@/ai/flows/consolidate-audio-analyses-flow";
+import { consolidateAudioAnalyses, type ConsolidateAudioAnalysesInput } from "@/ai/flows/consolidate-audio-analyses-flow";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Alert as ShadAlert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 interface AudioFileResult {
   id: string;
@@ -25,7 +29,11 @@ interface AudioFileResult {
   progress: number;
 }
 
-export default function AudioAnalysisPage() {
+function AudioAnalysisContent() {
+  const searchParams = useSearchParams();
+  const caseId = searchParams.get("caseId");
+  const caseName = searchParams.get("caseName");
+
   const [audioFileResults, setAudioFileResults] = useState<AudioFileResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isConsolidating, setIsConsolidating] = useState(false);
@@ -34,11 +42,11 @@ export default function AudioAnalysisPage() {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const isCaseSelected = !!caseId;
   const allFilesAnalyzed = audioFileResults.length > 0 && audioFileResults.every(f => f.status === "completed" || f.status === "failed");
   const atLeastOneSuccess = audioFileResults.some(f => f.status === "completed" && f.output);
 
   useEffect(() => {
-    // Clear consolidated report if file list changes significantly (e.g., all removed or new ones added)
     if (audioFileResults.length === 0 && consolidatedReport) {
       setConsolidatedReport(null);
     }
@@ -85,6 +93,10 @@ export default function AudioAnalysisPage() {
   };
 
   const handleAnalyzeAll = async () => {
+    if (!isCaseSelected) {
+      toast({ variant: "destructive", title: "Nenhum Caso Selecionado", description: "Vá para Gestão de Casos e selecione um caso." });
+      return;
+    }
     const filesToProcess = audioFileResults.filter(f => f.status === 'pending' || f.status === 'failed');
     if (filesToProcess.length === 0) {
       toast({ variant: "default", title: "Nenhum Arquivo Novo para Analisar", description: "Todos os arquivos selecionados já foram processados ou não há arquivos pendentes." });
@@ -93,7 +105,7 @@ export default function AudioAnalysisPage() {
 
     setIsProcessing(true);
     setConsolidatedReport(null); 
-    toast({ title: "Iniciando Análise em Lote", description: `Processando ${filesToProcess.length} arquivo(s) de áudio.` });
+    toast({ title: "Iniciando Análise em Lote", description: `Processando ${filesToProcess.length} arquivo(s) de áudio para o caso "${caseName}".` });
 
     for (const audioFile of filesToProcess) {
       updateFileStatus(audioFile.id, { status: "reading", progress: 5, error: undefined, output: undefined });
@@ -113,7 +125,8 @@ export default function AudioAnalysisPage() {
         const input: TranscribeAudioInput = { audioDataUri: dataUri };
         const result = await transcribeAudio(input);
         updateFileStatus(audioFile.id, { output: result, status: "completed", progress: 100 });
-        toast({ title: "Análise Concluída", description: `Áudio "${audioFile.file.name}" processado com sucesso.` });
+        // TODO: Persist analysisResult to the selected case
+        toast({ title: "Análise Concluída", description: `Áudio "${audioFile.file.name}" processado para o caso "${caseName}". (Persistência pendente)` });
 
       } catch (error: any) {
         console.error(`Erro na transcrição de ${audioFile.file.name}:`, error);
@@ -127,6 +140,10 @@ export default function AudioAnalysisPage() {
   };
 
   const handleConsolidateReports = async () => {
+    if (!isCaseSelected) {
+      toast({ variant: "destructive", title: "Nenhum Caso Selecionado", description: "Vá para Gestão de Casos e selecione um caso." });
+      return;
+    }
     const successfulAnalyses = audioFileResults.filter(
       (f) => f.status === "completed" && f.output
     );
@@ -144,7 +161,7 @@ export default function AudioAnalysisPage() {
     setConsolidatedReport(null);
     toast({
       title: "Iniciando Consolidação de Relatórios",
-      description: `Consolidando ${successfulAnalyses.length} análise(s) de áudio. Isso pode levar alguns instantes.`,
+      description: `Consolidando ${successfulAnalyses.length} análise(s) de áudio para o caso "${caseName}". Pode levar alguns instantes.`,
     });
 
     try {
@@ -154,14 +171,15 @@ export default function AudioAnalysisPage() {
           transcript: f.output!.transcript,
           report: f.output!.report,
         })),
-        caseContext: caseContext || undefined,
+        caseContext: caseContext || `Relatório consolidado para o caso: ${caseName}`,
       };
 
       const result = await consolidateAudioAnalyses(input);
       setConsolidatedReport(result.consolidatedReport);
+      // TODO: Persist consolidatedReport to the selected case
       toast({
         title: "Relatório Consolidado Gerado",
-        description: "O relatório consolidado dos áudios foi gerado com sucesso.",
+        description: `Relatório consolidado para o caso "${caseName}" gerado com sucesso. (Persistência pendente)`,
       });
     } catch (error: any) {
       console.error("Erro na consolidação dos relatórios:", error);
@@ -202,6 +220,26 @@ export default function AudioAnalysisPage() {
         <p className="text-muted-foreground">Envie múltiplos arquivos de áudio para transcrição, identificação de interlocutores e geração de relatórios de investigação criminal, incluindo um relatório consolidado.</p>
       </header>
 
+      {!isCaseSelected && (
+        <ShadAlert variant="destructive" className="mb-4">
+          <FolderKanban className="h-4 w-4" />
+          <AlertTitle>Nenhum Caso Selecionado!</AlertTitle>
+          <AlertDescription>
+            Por favor, vá para a página de <Link href="/case-management" className="font-semibold underline">Gestão de Casos</Link> para selecionar ou criar um caso antes de prosseguir com a análise.
+          </AlertDescription>
+        </ShadAlert>
+      )}
+
+      {isCaseSelected && (
+         <ShadAlert variant="default" className="mb-4 bg-primary/5 border-primary/20">
+            <Info className="h-4 w-4 text-primary" />
+            <AlertTitle className="text-primary">Analisando para o Caso: {decodeURIComponent(caseName || "Não especificado")}</AlertTitle>
+            <AlertDescription>
+              Todas as análises realizadas aqui serão conceitualmente vinculadas a este caso.
+            </AlertDescription>
+          </ShadAlert>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Enviar Arquivos de Áudio</CardTitle>
@@ -210,7 +248,7 @@ export default function AudioAnalysisPage() {
         <CardContent className="space-y-4">
           <div className="grid w-full max-w-sm items-center gap-1.5">
             <Label htmlFor="audio-upload">Arquivos de Áudio</Label>
-            <Input id="audio-upload" type="file" accept="audio/*" multiple onChange={handleFileChange} ref={fileInputRef} disabled={isProcessing || isConsolidating} />
+            <Input id="audio-upload" type="file" accept="audio/*" multiple onChange={handleFileChange} ref={fileInputRef} disabled={isProcessing || isConsolidating || !isCaseSelected} />
           </div>
           
           {audioFileResults.length > 0 && (
@@ -253,7 +291,7 @@ export default function AudioAnalysisPage() {
 
         </CardContent>
         <CardFooter className="flex flex-wrap gap-2">
-          <Button onClick={handleAnalyzeAll} disabled={audioFileResults.filter(f=> f.status === 'pending' || f.status === 'failed').length === 0 || isProcessing || isConsolidating}>
+          <Button onClick={handleAnalyzeAll} disabled={audioFileResults.filter(f=> f.status === 'pending' || f.status === 'failed').length === 0 || isProcessing || isConsolidating || !isCaseSelected}>
             {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Files className="mr-2 h-4 w-4" />}
             {isProcessing ? "Analisando Áudios..." : `Analisar ${audioFileResults.filter(f=> f.status === 'pending' || f.status === 'failed').length} Áudio(s)`}
           </Button>
@@ -329,12 +367,12 @@ export default function AudioAnalysisPage() {
                 onChange={(e) => setCaseContext(e.target.value)}
                 placeholder="Forneça um breve contexto sobre o caso para ajudar na consolidação..."
                 rows={3}
-                disabled={isConsolidating || isProcessing}
+                disabled={isConsolidating || isProcessing || !isCaseSelected}
               />
             </div>
           </CardContent>
           <CardFooter>
-            <Button onClick={handleConsolidateReports} disabled={isConsolidating || isProcessing || !atLeastOneSuccess}>
+            <Button onClick={handleConsolidateReports} disabled={isConsolidating || isProcessing || !atLeastOneSuccess || !isCaseSelected}>
               {isConsolidating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BookText className="mr-2 h-4 w-4"/>}
               {isConsolidating ? "Consolidando Relatórios..." : "Gerar Relatório Consolidado"}
             </Button>
@@ -346,6 +384,7 @@ export default function AudioAnalysisPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><BookText className="h-6 w-6 text-primary"/>Relatório Consolidado Final</CardTitle>
+            {caseName && <CardDescription>Referente ao caso: {decodeURIComponent(caseName)}</CardDescription>}
           </CardHeader>
           <CardContent>
             <ScrollArea className="h-[400px] w-full rounded-md border p-4 bg-muted/50">
@@ -357,4 +396,12 @@ export default function AudioAnalysisPage() {
 
     </div>
   );
+}
+
+export default function AudioAnalysisPage() {
+  return (
+    <Suspense fallback={<div>Carregando...</div>}>
+      <AudioAnalysisContent />
+    </Suspense>
+  )
 }

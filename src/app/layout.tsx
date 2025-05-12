@@ -27,7 +27,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
-      <body className="font-sans antialiased"> {/* Use Tailwind's font-sans utility which picks up the CSS variables */}
+      <body className="font-sans antialiased"> {/* Use Tailwind's font-sans utility which picks up the CSS variables from html tag and globals.css */}
         <AppLayout>
           {children}
         </AppLayout>

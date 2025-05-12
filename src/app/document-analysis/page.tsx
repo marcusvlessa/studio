@@ -1,33 +1,41 @@
+// src/app/document-analysis/page.tsx
 "use client";
 
-import { useState, type ChangeEvent, useRef } from "react";
+import { useState, type ChangeEvent, useRef, useEffect, Suspense } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { FileUp, RotateCcw, Search, Loader2, FileTextIcon, CheckCircle, AlertCircle, Info, UserCheck, FileSignature, ListChecks, AlertTriangle, BookOpen, Scale, Gavel } from "lucide-react";
+import { FileUp, RotateCcw, Search, Loader2, FileTextIcon, CheckCircle, AlertCircle, Info, UserCheck, FileSignature, ListChecks, AlertTriangle, BookOpen, Scale, Gavel, FolderKanban } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { analyzeDocument, type AnalyzeDocumentInput, type AnalyzeDocumentOutput } from "@/ai/flows/analyze-document-flow";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Alert as ShadAlert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
-export default function DocumentAnalysisPage() {
+function DocumentAnalysisContent() {
+  const searchParams = useSearchParams();
+  const caseId = searchParams.get("caseId");
+  const caseName = searchParams.get("caseName");
+
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [filePreview, setFilePreview] = useState<string | null>(null); // For image previews
+  const [filePreview, setFilePreview] = useState<string | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalyzeDocumentOutput | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const isCaseSelected = !!caseId;
+
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      // Allow a broader range of types, as the backend will sort them out.
-      // Basic client-side check can still be useful for user experience.
       const commonImageTypes = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/jpg"];
       const documentTypes = [
         "application/pdf", 
@@ -38,10 +46,8 @@ export default function DocumentAnalysisPage() {
        const isAllowedFile = commonImageTypes.includes(file.type.toLowerCase()) || 
                              documentTypes.includes(file.type.toLowerCase()) ||
                              file.name.toLowerCase().endsWith(".txt") ||
-                             // Heuristic for files without standard browser MIME types but we might want to try
                              file.name.toLowerCase().endsWith(".doc") || 
                              file.name.toLowerCase().endsWith(".docx");
-
 
       if (isAllowedFile) {
         setSelectedFile(file);
@@ -60,8 +66,7 @@ export default function DocumentAnalysisPage() {
         toast({ title: "Arquivo Selecionado", description: file.name });
       } else {
         toast({ variant: "destructive", title: "Tipo de Arquivo Potencialmente Não Suportado", description: "Por favor, envie um arquivo PDF, Word, TXT ou imagem. Outros tipos podem não ser processados corretamente." });
-        // Still allow selection, backend will handle it
-        setSelectedFile(file);
+        setSelectedFile(file); // Allow selection, backend handles it
         setAnalysisResult(null);
         setProgress(0);
         setFilePreview(null);
@@ -71,6 +76,10 @@ export default function DocumentAnalysisPage() {
   };
 
   const handleAnalyze = async () => {
+    if (!isCaseSelected) {
+      toast({ variant: "destructive", title: "Nenhum Caso Selecionado", description: "Vá para Gestão de Casos e selecione um caso." });
+      return;
+    }
     if (!selectedFile) {
       toast({ variant: "destructive", title: "Nenhum Arquivo Selecionado", description: "Por favor, selecione um arquivo para analisar." });
       return;
@@ -83,10 +92,10 @@ export default function DocumentAnalysisPage() {
     let currentProgress = 0;
     const progressInterval = setInterval(() => {
       currentProgress += 5;
-      if (currentProgress <= 30) { 
+      if (currentProgress <= 90) { 
         setProgress(currentProgress);
       }
-    }, 200);
+    }, 300);
 
     const fileName = selectedFile.name;
     const fileType = selectedFile.type;
@@ -95,91 +104,32 @@ export default function DocumentAnalysisPage() {
       let inputData: AnalyzeDocumentInput;
 
       if (fileType === "text/plain" || fileName.toLowerCase().endsWith(".txt")) {
-        // Handle text files by reading their content directly
-        const reader = new FileReader();
-        reader.readAsText(selectedFile);
-        
-        reader.onloadend = async (e) => {
-          clearInterval(progressInterval);
-          const textContent = e.target?.result as string;
-          if (typeof textContent !== 'string') {
-            toast({ variant: "destructive", title: "Erro ao Ler Arquivo de Texto", description: "Não foi possível ler o conteúdo do arquivo de texto."});
-            setIsLoading(false);
-            setProgress(0);
-            return;
-          }
-          setProgress(50);
-          inputData = { 
-              textContent,
-              fileName: selectedFile.name
-          };
-          
-          try {
-            const result = await analyzeDocument(inputData);
-            setAnalysisResult(result);
-            setProgress(100);
-            toast({ title: "Análise Concluída", description: "Documento processado com sucesso." });
-          } catch (aiError) {
-             console.error("Erro na análise do documento (texto):", aiError);
-             toast({ variant: "destructive", title: "Falha na Análise (Texto)", description: aiError instanceof Error ? aiError.message : "Ocorreu um erro desconhecido." });
-             setProgress(0);
-          } finally {
-            setIsLoading(false);
-          }
-        };
-        reader.onerror = () => {
-            clearInterval(progressInterval);
-            setIsLoading(false);
-            setProgress(0);
-            toast({ variant: "destructive", title: "Erro ao Ler Arquivo", description: "Ocorreu um erro ao tentar ler o arquivo de texto."});
-        };
+        const textContent = await selectedFile.text();
+        setProgress(50);
+        inputData = { textContent, fileName: selectedFile.name };
       } else {
-        // For all other file types (images, PDF, DOC, DOCX, unknown), read as data URI
-        // The backend flow will determine if it can be processed directly or if it needs
-        // to be handled as a system message via textContent.
-        const reader = new FileReader();
-        reader.readAsDataURL(selectedFile);
-
-        reader.onloadend = async (e) => {
-          clearInterval(progressInterval);
-          const fileDataUri = e.target?.result as string;
-          if (!fileDataUri) {
-            toast({ variant: "destructive", title: "Erro ao Ler Arquivo", description: "Não foi possível ler o conteúdo do arquivo."});
-            setIsLoading(false);
-            setProgress(0);
-            return;
-          }
-          setProgress(50);
-          inputData = { 
-              fileDataUri,
-              fileName: selectedFile.name
-          };
-
-           try {
-            const result = await analyzeDocument(inputData);
-            setAnalysisResult(result);
-            setProgress(100);
-            toast({ title: "Análise Concluída", description: "Documento processado com sucesso." });
-          } catch (aiError) {
-             console.error("Erro na análise do documento (arquivo):", aiError);
-             toast({ variant: "destructive", title: "Falha na Análise (Arquivo)", description: aiError instanceof Error ? aiError.message : "Ocorreu um erro desconhecido." });
-             setProgress(0);
-          } finally {
-            setIsLoading(false);
-          }
-        };
-        reader.onerror = () => {
-            clearInterval(progressInterval);
-            setIsLoading(false);
-            setProgress(0);
-            toast({ variant: "destructive", title: "Erro ao Ler Arquivo", description: "Ocorreu um erro ao tentar ler o arquivo."});
-        };
+        const fileDataUri = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(selectedFile);
+          reader.onloadend = (e) => resolve(e.target?.result as string);
+          reader.onerror = (e) => reject(new Error("Erro ao ler o arquivo."));
+        });
+        setProgress(50);
+        inputData = { fileDataUri, fileName: selectedFile.name };
       }
-    } catch (error) { 
+          
+      const result = await analyzeDocument(inputData);
+      setAnalysisResult(result);
+      setProgress(100);
+      // TODO: Persist analysisResult to the selected case (e.g., via API call or state management)
+      toast({ title: "Análise Concluída", description: `Documento "${fileName}" processado para o caso "${caseName}". (Persistência de resultado pendente)` });
+
+    } catch (error: any) {
+       console.error("Erro na análise do documento:", error);
+       toast({ variant: "destructive", title: "Falha na Análise", description: error instanceof Error ? error.message : "Ocorreu um erro desconhecido." });
+       setProgress(0);
+    } finally {
       clearInterval(progressInterval);
-      console.error("Erro geral na preparação da análise:", error);
-      toast({ variant: "destructive", title: "Falha na Preparação da Análise", description: error instanceof Error ? error.message : "Ocorreu um erro desconhecido." });
-      setProgress(0);
       setIsLoading(false);
     }
   };
@@ -200,13 +150,33 @@ export default function DocumentAnalysisPage() {
     <div className="flex flex-col gap-6">
       <header className="mb-4">
         <h1 className="text-3xl font-bold tracking-tight">Módulo de Análise de Documentos Investigativa</h1>
-        <p className="text-muted-foreground">Envie documentos (PDF, Word, TXT, Imagens) para uma análise multifacetada por IA, simulando papéis de Investigador, Escrivão e Delegado.</p>
+        <p className="text-muted-foreground">Envie documentos (PDF, Word, TXT, Imagens) para uma análise multifacetada por IA.</p>
       </header>
+
+      {!isCaseSelected && (
+        <ShadAlert variant="destructive" className="mb-4">
+          <FolderKanban className="h-4 w-4" />
+          <AlertTitle>Nenhum Caso Selecionado!</AlertTitle>
+          <AlertDescription>
+            Por favor, vá para a página de <Link href="/case-management" className="font-semibold underline">Gestão de Casos</Link> para selecionar ou criar um caso antes de prosseguir com a análise.
+          </AlertDescription>
+        </ShadAlert>
+      )}
+
+      {isCaseSelected && (
+         <ShadAlert variant="default" className="mb-4 bg-primary/5 border-primary/20">
+            <Info className="h-4 w-4 text-primary" />
+            <AlertTitle className="text-primary">Analisando para o Caso: {decodeURIComponent(caseName || "Não especificado")}</AlertTitle>
+            <AlertDescription>
+              Qualquer análise realizada aqui será conceitualmente vinculada a este caso.
+            </AlertDescription>
+          </ShadAlert>
+      )}
 
       <Card>
         <CardHeader>
           <CardTitle>Enviar Documento para Análise Profunda</CardTitle>
-          <CardDescription>Selecione um arquivo para extração de texto (OCR para imagens), resumo, identificação de entidades e uma análise investigativa completa.</CardDescription>
+          <CardDescription>Selecione um arquivo para extração de texto, resumo, identificação de entidades e análise investigativa completa.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid w-full max-w-sm items-center gap-1.5">
@@ -217,7 +187,7 @@ export default function DocumentAnalysisPage() {
                 ref={fileInputRef}
                 accept=".pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,.txt,image/*" 
                 onChange={handleFileChange} 
-                disabled={isLoading}
+                disabled={isLoading || !isCaseSelected}
             />
           </div>
           {selectedFile && (
@@ -233,7 +203,7 @@ export default function DocumentAnalysisPage() {
             <div>
               <Label>Pré-visualização da Imagem:</Label>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={filePreview} alt="Preview" className="mt-2 max-h-60 w-auto rounded border object-contain" />
+              <img src={filePreview} alt="Preview" className="mt-2 max-h-60 w-auto rounded border object-contain" data-ai-hint="documento foto" />
             </div>
           )}
           {isLoading && (
@@ -241,17 +211,15 @@ export default function DocumentAnalysisPage() {
               <Label>Progresso da Análise:</Label>
               <Progress value={progress} className="w-full" />
               <p className="text-sm text-muted-foreground text-center">
-                {progress}% 
-                {progress < 35 && " (Iniciando...)"}
-                {progress >= 35 && progress < 50 && " (Preparando arquivo...)"}
-                {progress >= 50 && progress < 100 && " (Processando com IA... pode levar alguns instantes)"}
-                {progress === 100 && " (Concluído!)"}
+                {progress <= 50 && "Preparando e lendo arquivo..."}
+                {progress > 50 && progress < 100 && "Analisando com IA (pode levar alguns instantes)..."}
+                {progress === 100 && "Concluído!"}
               </p>
             </div>
           )}
         </CardContent>
         <CardFooter className="gap-2">
-          <Button onClick={handleAnalyze} disabled={!selectedFile || isLoading}>
+          <Button onClick={handleAnalyze} disabled={!selectedFile || isLoading || !isCaseSelected}>
             {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
             {isLoading ? "Analisando Documento..." : "Analisar Documento"}
           </Button>
@@ -301,7 +269,7 @@ export default function DocumentAnalysisPage() {
             
             <Accordion type="multiple" className="w-full space-y-4" defaultValue={["investigator-analysis", "clerk-report", "delegate-assessment"]}>
                 {analysisResult.investigatorAnalysis && (
-                    <AccordionItem value="investigator-analysis" className="border rounded-lg bg-card">
+                    <AccordionItem value="investigator-analysis" className="border rounded-lg bg-card shadow-sm">
                         <AccordionTrigger className="p-4 text-lg font-semibold hover:no-underline">
                             <div className="flex items-center gap-2"><UserCheck className="h-6 w-6 text-blue-600" /> Análise do Investigador</div>
                         </AccordionTrigger>
@@ -330,7 +298,7 @@ export default function DocumentAnalysisPage() {
                 )}
 
                 {analysisResult.clerkReport && (
-                     <AccordionItem value="clerk-report" className="border rounded-lg bg-card">
+                     <AccordionItem value="clerk-report" className="border rounded-lg bg-card shadow-sm">
                         <AccordionTrigger className="p-4 text-lg font-semibold hover:no-underline">
                              <div className="flex items-center gap-2"><FileSignature className="h-6 w-6 text-orange-600" /> Relatório do Escrivão</div>
                         </AccordionTrigger>
@@ -356,7 +324,7 @@ export default function DocumentAnalysisPage() {
                 )}
 
                 {analysisResult.delegateAssessment && (
-                    <AccordionItem value="delegate-assessment" className="border rounded-lg bg-card">
+                    <AccordionItem value="delegate-assessment" className="border rounded-lg bg-card shadow-sm">
                         <AccordionTrigger className="p-4 text-lg font-semibold hover:no-underline">
                              <div className="flex items-center gap-2"><Gavel className="h-6 w-6 text-red-600" /> Avaliação do Delegado</div>
                         </AccordionTrigger>
@@ -406,7 +374,7 @@ export default function DocumentAnalysisPage() {
                         <CardTitle className="flex items-center gap-2"><AlertCircle className="h-6 w-6 text-yellow-500" /> Conteúdo Processado</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <p className="text-muted-foreground">Nenhum texto foi explicitamente retornado no campo 'extractedText'. Isso pode ocorrer se o arquivo original era um tipo não textual sem extração bem-sucedida ou se a IA não populou este campo especificamente.</p>
+                        <p className="text-muted-foreground">Nenhum texto foi explicitamente retornado no campo 'extractedText'. Isto pode ocorrer se o arquivo original não era textual e a extração não foi bem-sucedida, ou se a IA não retornou este campo.</p>
                     </CardContent>
                 </Card>
             )}
@@ -416,3 +384,10 @@ export default function DocumentAnalysisPage() {
   );
 }
 
+export default function DocumentAnalysisPage() {
+  return (
+    <Suspense fallback={<div>Carregando...</div>}>
+      <DocumentAnalysisContent />
+    </Suspense>
+  );
+}

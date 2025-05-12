@@ -26,7 +26,7 @@ export type AnalyzeImageInput = z.infer<typeof AnalyzeImageInputSchema>;
 const FacialRecognitionDetailSchema = z.object({
   boundingBox: z.array(z.number()).optional().describe('Caixa delimitadora da face detectada (ex: [x, y, largura, altura]).'),
   confidence: z.number().optional().describe('Confiança da detecção da face (0 a 1).'),
-  attributes: z.record(z.string(), z.any()).optional().describe('Atributos gerais da face (ex: óculos, sorriso), se detectados.')
+  attributesDescription: z.string().optional().describe('Descrição textual dos atributos gerais da face (ex: "possui óculos, aparenta estar sorrindo"), se detectados.')
 });
 
 const AnalyzeImageOutputSchema = z.object({
@@ -82,7 +82,7 @@ const analyzeImagePrompt = ai.definePrompt({
       *   Se, para realizar sua análise, você implicitamente aplicou alguma técnica de melhoramento (ex: aumento de nitidez para ler um texto), mencione quais foram.
   4.  **Detecção Facial**:
       *   Indique o número de faces humanas claramente visíveis na imagem. Se nenhuma face for detectada, retorne 0.
-      *   Se faces forem detectadas, e se a IA puder fornecer, descreva características gerais para cada uma (sem fazer identificação pessoal), como a presença de óculos, barba, chapéu, ou a direção do olhar, se discernível. Não tente adivinhar identidade, idade exata ou etnia. Apenas características observáveis. Forneça a caixa delimitadora (bounding box) e confiança se possível.
+      *   Se faces forem detectadas, e se a IA puder fornecer, descreva características gerais para cada uma (sem fazer identificação pessoal), como a presença de óculos, barba, chapéu, ou a direção do olhar, se discernível, no campo 'attributesDescription'. Não tente adivinhar identidade, idade exata ou etnia. Apenas características observáveis. Forneça a caixa delimitadora (bounding box) e confiança se possível.
       *   Se a IA não puder fornecer detalhes faciais mesmo detectando faces, indique isso.
 
   Seja objetivo e forneça informações factuais baseadas na imagem. Certifique-se de preencher todos os campos do schema de saída, mesmo que com valores indicando ausência de informação (ex: "Nenhuma placa detectada", lista vazia para sugestões, 0 para faces).
@@ -111,4 +111,5 @@ const analyzeImageFlow = ai.defineFlow(
     return output;
   }
 );
+
 

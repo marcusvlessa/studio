@@ -1,14 +1,16 @@
+
 // src/app/page.tsx
 "use client";
 import { useEffect, useState, useMemo } from "react";
-import { TrendingUp, FileSearch, FolderKanban, AlertTriangle, MapPin } from "lucide-react";
+import { TrendingUp, FileSearch, FolderKanban, AlertTriangle, MapPin, ShieldCheck } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
 import { BarChart, LineChart, Bar, CartesianGrid, XAxis, YAxis, Line, Pie, PieChart as RechartsPieChart, ResponsiveContainer, Tooltip as RechartsTooltip, Legend as RechartsLegend, Cell } from "recharts";
 import Image from "next/image";
 import { useToast } from "@/hooks/use-toast";
-import type { Case } from "@/types/case";
+import type { Case, CaseAnalysis, AggregatedCrimeTag } from "@/types/case";
 import { Loader2 } from "lucide-react";
+import type { ClassifyTextForCrimesOutput } from "@/ai/flows/classify-text-for-crimes-flow";
 
 type ChartConfig = Record<string, { label: string; color: string }>;
 
@@ -18,6 +20,16 @@ const statusColors: Record<Case["status"], string> = {
   "Resolvido": "hsl(var(--chart-3))",
   "Fechado": "hsl(var(--chart-4))",
 };
+
+const crimeColors: string[] = [
+  "hsl(var(--chart-1))",
+  "hsl(var(--chart-2))",
+  "hsl(var(--chart-3))",
+  "hsl(var(--chart-4))",
+  "hsl(var(--chart-5))",
+  "hsl(var(--accent))", // Using accent for variety
+];
+
 
 export default function DashboardPage() {
   const [cases, setCases] = useState<Case[]>([]);
@@ -63,7 +75,7 @@ export default function DashboardPage() {
     }));
   }, [cases]);
 
-  const chartConfigBar: ChartConfig = useMemo(() => 
+  const chartConfigBarStatus: ChartConfig = useMemo(() => 
     Object.keys(statusColors).reduce((acc, statusKey) => {
       acc[statusKey] = { label: statusKey, color: statusColors[statusKey as Case["status"]] };
       return acc;
@@ -97,11 +109,46 @@ export default function DashboardPage() {
     novosCasos: { label: "Novos Casos", color: "hsl(var(--chart-1))" },
   };
   
-  const pieChartData = casesByStatusChartData.map(item => ({
+  const pieChartDataStatus = casesByStatusChartData.map(item => ({
     name: item.status,
     value: item.count,
     fill: item.fill,
   }));
+
+  const aggregatedCrimeData: AggregatedCrimeTag[] = useMemo(() => {
+    const crimeCounts: Record<string, number> = {};
+    cases.forEach(c => {
+      c.relatedAnalyses.forEach(analysis => {
+        // Check for crimeAnalysisResults in document data, and potentially other similar fields in other analysis types later
+        const crimeAnalysis = (analysis.data as any)?.crimeAnalysisResults as ClassifyTextForCrimesOutput | undefined;
+        if (crimeAnalysis?.crimeTags && crimeAnalysis.crimeTags.length > 0) {
+          crimeAnalysis.crimeTags.forEach(tag => {
+            if (tag.crimeType && tag.crimeType !== 'Atividade Suspeita Não Especificada' && tag.crimeType !== 'Atividade Suspeita Relevante') {
+              crimeCounts[tag.crimeType] = (crimeCounts[tag.crimeType] || 0) + 1;
+            }
+          });
+        }
+      });
+    });
+
+    const sortedCrimeData = Object.entries(crimeCounts)
+      .sort(([, countA], [, countB]) => countB - countA) // Sort by count descending
+      .slice(0, 10); // Take top 10 for readability
+
+    return sortedCrimeData.map(([name, value], index) => ({
+      name, // For BarChart dataKey
+      crimeType: name, // For label/tooltip
+      count: value,
+      fill: crimeColors[index % crimeColors.length],
+    }));
+  }, [cases]);
+
+   const chartConfigCrimeTypes: ChartConfig = useMemo(() => 
+    aggregatedCrimeData.reduce((acc, crime) => {
+      acc[crime.name] = { label: crime.crimeType, color: crime.fill };
+      return acc;
+    }, {} as ChartConfig)
+  , [aggregatedCrimeData]);
 
 
   if (isLoading) {
@@ -124,7 +171,7 @@ export default function DashboardPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total de Casos Registrados</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            <FolderKanban className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{totalCases}</div>
@@ -134,17 +181,17 @@ export default function DashboardPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Casos em Investigação</CardTitle>
-            <FileSearch className="h-4 w-4 text-muted-foreground" />
+            <FileSearch className="h-4 w-4 text-yellow-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{casesEmInvestigacao}</div>
+            <div className="text-2xl font-bold text-yellow-700">{casesEmInvestigacao}</div>
             <p className="text-xs text-muted-foreground">Casos atualmente sob investigação ativa.</p>
           </CardContent>
         </Card>
          <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Casos Abertos</CardTitle>
-            <FolderKanban className="h-4 w-4 text-blue-500" />
+            <AlertTriangle className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-blue-600">{casesAbertos}</div>
@@ -153,42 +200,41 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle>Distribuição de Casos por Status</CardTitle>
             <CardDescription>Visão geral dos status dos casos.</CardDescription>
           </CardHeader>
           <CardContent>
-            <ChartContainer config={chartConfigBar} className="h-[300px] w-full">
-              <BarChart accessibilityLayer data={casesByStatusChartData} layout="vertical">
-                <CartesianGrid horizontal={false} />
-                <YAxis
-                  dataKey="status"
-                  type="category"
-                  tickLine={false}
-                  tickMargin={10}
-                  axisLine={false}
-                />
-                <XAxis dataKey="count" type="number" hide/>
-                <ChartTooltip 
-                    cursor={false} 
-                    content={<ChartTooltipContent 
-                        formatter={(value, name) => `${value} casos`}
-                        labelFormatter={(label) => `Status: ${label}`} 
-                    />} 
-                />
-                <ChartLegend content={<ChartLegendContent />} />
-                {Object.keys(statusColors).map((statusKey) => (
-                    <Bar key={statusKey} dataKey="count" name={statusKey} fill={`var(--color-${statusKey})`} radius={4} 
-                        barSize={30}
-                    >
-                         {casesByStatusChartData.map((entry, index) => (
-                            entry.status === statusKey && <Cell key={`cell-${index}`} fill={entry.fill} />
-                         ))}
-                    </Bar>
-                ))}
-              </BarChart>
+            <ChartContainer config={chartConfigBarStatus} className="h-[300px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart accessibilityLayer data={casesByStatusChartData} layout="vertical" margin={{ right: 20}}>
+                  <CartesianGrid horizontal={false} />
+                  <YAxis
+                    dataKey="status"
+                    type="category"
+                    tickLine={false}
+                    tickMargin={10}
+                    axisLine={false}
+                    width={120}
+                  />
+                  <XAxis dataKey="count" type="number" hide/>
+                  <ChartTooltip 
+                      cursor={false} 
+                      content={<ChartTooltipContent 
+                          formatter={(value, name) => `${value} casos`}
+                          labelFormatter={(label) => `Status: ${label}`} 
+                      />} 
+                  />
+                  <ChartLegend content={<ChartLegendContent />} />
+                  <Bar dataKey="count" radius={5} barSize={25}>
+                      {casesByStatusChartData.map((entry) => (
+                          <Cell key={entry.status} fill={entry.fill} name={entry.status} />
+                      ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
             </ChartContainer>
           </CardContent>
         </Card>
@@ -200,77 +246,77 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <ChartContainer config={chartConfigLine} className="h-[300px] w-full">
-              <LineChart
-                accessibilityLayer
-                data={casesOverTimeChartData}
-                margin={{ left: 12, right: 12, top: 5, bottom: 5 }}
-              >
-                <CartesianGrid vertical={false} />
-                <XAxis
-                  dataKey="month"
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={8}
-                />
-                <YAxis dataKey="novosCasos" allowDecimals={false} />
-                <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="line" />} />
-                 <ChartLegend content={<ChartLegendContent />} />
-                <Line
-                  dataKey="novosCasos"
-                  type="monotone"
-                  stroke="var(--color-novosCasos)"
-                  strokeWidth={2}
-                  dot={{ r: 4, fill: "var(--color-novosCasos)" }}
-                  activeDot={{ r: 6 }}
-                />
-              </LineChart>
+               <ResponsiveContainer width="100%" height="100%">
+                <LineChart
+                  accessibilityLayer
+                  data={casesOverTimeChartData}
+                  margin={{ left: 12, right: 12, top: 5, bottom: 5 }}
+                >
+                  <CartesianGrid vertical={false} />
+                  <XAxis
+                    dataKey="month"
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                  />
+                  <YAxis dataKey="novosCasos" allowDecimals={false} />
+                  <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="line" />} />
+                  <ChartLegend content={<ChartLegendContent />} />
+                  <Line
+                    dataKey="novosCasos"
+                    type="monotone"
+                    stroke="var(--color-novosCasos)"
+                    strokeWidth={2}
+                    dot={{ r: 4, fill: "var(--color-novosCasos)" }}
+                    activeDot={{ r: 6 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
             </ChartContainer>
           </CardContent>
         </Card>
       </div>
       
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2">
         <Card className="col-span-1">
             <CardHeader>
-                <CardTitle>Proporção de Casos por Status</CardTitle>
-                <CardDescription>Percentual de casos em cada status.</CardDescription>
+                <CardTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-primary"/> Tipos de Crimes Identificados (Top 10)</CardTitle>
+                <CardDescription>Distribuição dos principais tipos de crimes identificados nas análises.</CardDescription>
             </CardHeader>
             <CardContent className="h-[350px]">
-                <ResponsiveContainer width="100%" height="100%">
-                    <RechartsPieChart>
-                        <RechartsTooltip 
-                            contentStyle={{
-                                backgroundColor: 'hsl(var(--card))', 
-                                borderColor: 'hsl(var(--border))',
-                                borderRadius: 'var(--radius)',
-                            }}
-                        />
-                        <RechartsLegend verticalAlign="bottom" height={36}/>
-                        <Pie data={pieChartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} labelLine={false}
-                            label={({ cx, cy, midAngle, innerRadius, outerRadius, percent, index }) => {
-                                const RADIAN = Math.PI / 180;
-                                const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
-                                const x = cx + radius * Math.cos(-midAngle * RADIAN);
-                                const y = cy + radius * Math.sin(-midAngle * RADIAN);
-                                return (
-                                <text x={x} y={y} fill="white" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize="12px">
-                                    {`${(percent * 100).toFixed(0)}%`}
-                                </text>
-                                );
-                            }}
-                        >
-                             {pieChartData.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={entry.fill} />
-                            ))}
-                        </Pie>
-                    </RechartsPieChart>
-                </ResponsiveContainer>
+              {aggregatedCrimeData.length > 0 ? (
+                <ChartContainer config={chartConfigCrimeTypes} className="h-[300px] w-full">
+                   <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={aggregatedCrimeData} layout="vertical" margin={{ right: 20}}>
+                      <CartesianGrid horizontal={false} />
+                      <YAxis dataKey="name" type="category" tickLine={false} axisLine={false} tickMargin={10} width={150} />
+                      <XAxis dataKey="count" type="number" hide />
+                      <ChartTooltip 
+                        cursor={false} 
+                        content={<ChartTooltipContent formatter={(value, name) => `${value} ocorrências`} />} 
+                      />
+                       <ChartLegend content={<ChartLegendContent />} />
+                       <Bar dataKey="count" radius={5} barSize={20}>
+                        {aggregatedCrimeData.map((entry) => (
+                          <Cell key={`cell-${entry.name}`} fill={entry.fill} name={entry.name}/>
+                        ))}
+                      </Bar>
+                    </BarChart>
+                   </ResponsiveContainer>
+                </ChartContainer>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-center">
+                  <ShieldCheck className="h-12 w-12 text-muted-foreground mb-2" />
+                  <p className="text-muted-foreground">Nenhum dado de crime classificado para exibir.</p>
+                  <p className="text-xs text-muted-foreground">Realize análises de documentos para popular este gráfico.</p>
+                </div>
+              )}
             </CardContent>
         </Card>
         <Card className="col-span-1">
           <CardHeader>
-            <CardTitle>Pontos Críticos Geoespaciais</CardTitle>
-            <CardDescription>Concentração de incidentes (Exemplo).</CardDescription>
+            <CardTitle>Pontos Críticos Geoespaciais (Exemplo)</CardTitle>
+            <CardDescription>Concentração de incidentes em mapa ilustrativo.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="aspect-video w-full overflow-hidden rounded-lg border bg-muted">
@@ -289,6 +335,8 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+       <p className="text-xs text-muted-foreground text-center mt-4">Nota: Os dados são simulados e armazenados em memória. Funcionalidades de IA dependem da chave API configurada.</p>
     </div>
   );
 }
+

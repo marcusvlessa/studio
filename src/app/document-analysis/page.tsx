@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { FileUp, RotateCcw, Search, Loader2, FileTextIcon, CheckCircle, AlertCircle, Info, UserCheck, FileSignature, Gavel, ListChecks, AlertTriangle, BookOpen, Scale, FolderKanban } from "lucide-react";
+import { FileUp, RotateCcw, Search, Loader2, FileTextIcon, CheckCircle, AlertCircle, Info, UserCheck, FileSignature, Gavel, ListChecks, AlertTriangle, BookOpen, Scale, FolderKanban, ShieldCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { analyzeDocument, type AnalyzeDocumentInput, type AnalyzeDocumentOutput } from "@/ai/flows/analyze-document-flow";
 import { Badge } from "@/components/ui/badge";
@@ -39,9 +39,12 @@ function DocumentAnalysisContent() {
   const saveAnalysisToCase = async (aiOutput: AnalyzeDocumentOutput) => {
     if (!caseId || !selectedFile) return;
 
+    const summary = aiOutput.summary || `Análise de '${selectedFile.name}'`;
+    const crimeSummary = aiOutput.crimeAnalysisResults?.overallCriminalAssessment ? `Avaliação Criminal: ${aiOutput.crimeAnalysisResults.overallCriminalAssessment.substring(0,50)}...` : 'Nenhuma classificação de crime.';
+
     const analysisEntry: Omit<DocumentCaseAnalysis, 'id' | 'analysisDate'> = {
       type: "Documento",
-      summary: `Análise de '${selectedFile.name}': ${aiOutput.summary.substring(0, 100)}${aiOutput.summary.length > 100 ? '...' : ''}`,
+      summary: `${summary.substring(0, 70)}... ${crimeSummary}`,
       originalFileName: selectedFile.name,
       data: aiOutput,
     };
@@ -97,12 +100,11 @@ function DocumentAnalysisContent() {
         }
         toast({ title: "Arquivo Selecionado", description: file.name });
       } else {
-        toast({ variant: "destructive", title: "Tipo de Arquivo Potencialmente Não Suportado", description: "Por favor, envie um arquivo PDF, Word, TXT ou imagem. Outros tipos podem não ser processados corretamente." });
-        setSelectedFile(file); // Allow selection, backend handles it
+        toast({ variant: "default", title: "Tipo de Arquivo Detectado", description: `Arquivo: ${file.name} (${file.type || 'desconhecido'}). O sistema tentará processá-lo, mas alguns tipos podem ter limitações.` });
+        setSelectedFile(file); 
         setAnalysisResult(null);
         setProgress(0);
         setFilePreview(null);
-        toast({ title: "Arquivo Selecionado (aviso)", description: `${file.name} - o tipo pode ter processamento limitado.` });
       }
     }
   };
@@ -190,7 +192,7 @@ function DocumentAnalysisContent() {
           <FolderKanban className="h-4 w-4" />
           <AlertTitle>Nenhum Caso Selecionado!</AlertTitle>
           <AlertDescription>
-            Por favor, vá para a página de <Link href="/case-management" className="font-semibold underline">Gestão de Casos</Link> para selecionar ou criar um caso antes de prosseguir com a análise.
+            Por favor, vá para a página de <Link href="/case-management?newCase=true" className="font-semibold underline">Gestão de Casos</Link> para selecionar ou criar um caso antes de prosseguir com a análise.
           </AlertDescription>
         </ShadAlert>
       )}
@@ -208,7 +210,7 @@ function DocumentAnalysisContent() {
       <Card>
         <CardHeader>
           <CardTitle>Enviar Documento para Análise Profunda</CardTitle>
-          <CardDescription>Selecione um arquivo para extração de texto, resumo, identificação de entidades e análise investigativa completa.</CardDescription>
+          <CardDescription>Selecione um arquivo para extração de texto, resumo, identificação de entidades, classificação de crimes e análise investigativa completa.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid w-full max-w-sm items-center gap-1.5">
@@ -217,7 +219,7 @@ function DocumentAnalysisContent() {
                 id="document-upload" 
                 type="file" 
                 ref={fileInputRef}
-                accept=".pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,.txt,image/*" 
+                accept=".pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,.txt,image/*,application/octet-stream" 
                 onChange={handleFileChange} 
                 disabled={isLoading || !isCaseSelected}
             />
@@ -295,6 +297,53 @@ function DocumentAnalysisContent() {
                                 </Badge>
                             ))}
                         </div>
+                    </CardContent>
+                </Card>
+            )}
+
+            {analysisResult.crimeAnalysisResults && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2"><ShieldCheck className="h-6 w-6 text-destructive" /> Análise Criminal</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div>
+                            <Label className="font-semibold text-md">Avaliação Criminal Geral:</Label>
+                            <Textarea value={analysisResult.crimeAnalysisResults.overallCriminalAssessment} readOnly rows={3} className="bg-muted/50 mt-1" />
+                        </div>
+                        {analysisResult.crimeAnalysisResults.crimeTags && analysisResult.crimeAnalysisResults.crimeTags.length > 0 && (
+                            <div>
+                                <Label className="font-semibold text-md">Tipos de Crimes Identificados:</Label>
+                                <div className="mt-1 space-y-2">
+                                    {analysisResult.crimeAnalysisResults.crimeTags.map((tag, index) => (
+                                        <Accordion key={index} type="single" collapsible className="border rounded-md bg-muted/30">
+                                            <AccordionItem value={`crime-${index}`} className="border-0">
+                                                <AccordionTrigger className="p-3 text-sm font-medium">
+                                                    <div className="flex items-center gap-2">
+                                                      <Badge variant={tag.confidence > 0.7 ? "destructive" : tag.confidence > 0.4 ? "secondary" : "outline"}>
+                                                        {tag.crimeType} (Conf: {(tag.confidence * 100).toFixed(0)}%)
+                                                      </Badge>
+                                                    </div>
+                                                </AccordionTrigger>
+                                                <AccordionContent className="p-3 pt-0 text-xs space-y-1">
+                                                    <p><strong>Descrição:</strong> {tag.description}</p>
+                                                    {tag.involvedParties && tag.involvedParties.length > 0 && (
+                                                        <p><strong>Envolvidos:</strong> {tag.involvedParties.join(", ")}</p>
+                                                    )}
+                                                    {tag.relevantExcerpts && tag.relevantExcerpts.length > 0 && (
+                                                        <div><strong>Trechos Relevantes:</strong>
+                                                          <ul className="list-disc list-inside pl-4">
+                                                            {tag.relevantExcerpts.map((excerpt, i) => <li key={i} className="italic">"{excerpt}"</li>)}
+                                                          </ul>
+                                                        </div>
+                                                    )}
+                                                </AccordionContent>
+                                            </AccordionItem>
+                                        </Accordion>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
             )}
@@ -423,3 +472,4 @@ export default function DocumentAnalysisPage() {
     </Suspense>
   );
 }
+

@@ -1,3 +1,4 @@
+
 import type { LucideIcon } from "lucide-react";
 import { LayoutDashboard, FileSearch, Mic, GitFork, ImageIcon, FolderKanban, NotebookText } from "lucide-react";
 
@@ -48,5 +49,6 @@ export const NAV_ITEMS: NavItem[] = [
   },
 ];
 
-export const SITE_TITLE = "CyberRIC"; 
-export const SITE_DESCRIPTION = "Centro de Inteligência e Denúncia de Cybercrimes";
+export const SITE_TITLE = "CyberRIC - Sistema de Inteligência Policial"; 
+export const SITE_DESCRIPTION = "Plataforma integrada para análise de documentos, áudios, imagens, vínculos e geração de Relatórios de Investigação Criminal (RIC).";
+

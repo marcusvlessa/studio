@@ -1,14 +1,16 @@
+
 'use server';
 /**
  * @fileOverview Fluxo de IA para análise de documentos, atuando como Investigador, Escrivão e Delegado.
  *
- * - analyzeDocument - Analisa um documento para extrair conteúdo, resumir, identificar entidades e fornecer análises investigativas.
+ * - analyzeDocument - Analisa um documento para extrair conteúdo, resumir, identificar entidades, classificar crimes e fornecer análises investigativas.
  * - AnalyzeDocumentInput - O tipo de entrada para a função analyzeDocument.
  * - AnalyzeDocumentOutput - O tipo de retorno para a função analyzeDocument.
  */
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
+import { classifyTextForCrimes, type ClassifyTextForCrimesOutput, type ClassifyTextForCrimesInput } from './classify-text-for-crimes-flow';
 
 const AnalyzeDocumentInputSchema = z.object({
   fileDataUri: z
@@ -51,6 +53,20 @@ const DelegateAssessmentSchema = z.object({
   legalConsiderations: z.string().optional().describe("Considerações legales preliminares, possíveis enquadramentos típicos (tipificação penal), ou implicações jurídicas com base nas informações disponíveis no documento."),
 });
 
+// Re-importing schema from classify-text-for-crimes-flow to avoid circular dependencies if it were in a shared types file
+const CrimeTagFromFlowSchema = z.object({
+  crimeType: z.string(),
+  description: z.string(),
+  confidence: z.number().min(0).max(1),
+  involvedParties: z.array(z.string()).optional(),
+  relevantExcerpts: z.array(z.string()).optional()
+});
+const CrimeAnalysisResultsSchema = z.object({
+  crimeTags: z.array(CrimeTagFromFlowSchema),
+  overallCriminalAssessment: z.string()
+});
+
+
 const AnalyzeDocumentOutputSchema = z.object({
   extractedText: z.string().optional().describe('O texto completo extraído do documento (ou o texto fornecido diretamente se textContent foi usado, ou uma mensagem do sistema se o processamento direto falhou). Pode estar ausente se a extração falhar ou não for aplicável.'),
   summary: z.string().describe('Um resumo conciso do conteúdo original do documento ou, se o conteúdo não pôde ser lido, um resumo da situação (ex: impossibilidade de leitura de arquivo X).'),
@@ -59,7 +75,8 @@ const AnalyzeDocumentOutputSchema = z.object({
   
   investigatorAnalysis: InvestigatorAnalysisSchema.describe("Análise detalhada sob a perspectiva de um Investigador de Polícia/Agente de Inteligência. Este campo é obrigatório."),
   clerkReport: ClerkReportSchema.optional().describe("Relatório estruturado e formalizado sob a perspectiva de um Escrivão de Polícia."),
-  delegateAssessment: DelegateAssessmentSchema.optional().describe("Avaliação, direcionamento e sugestões de próximos passos sob a perspectiva de um Delegado de Polícia.")
+  delegateAssessment: DelegateAssessmentSchema.optional().describe("Avaliação, direcionamento e sugestões de próximos passos sob a perspectiva de um Delegado de Polícia."),
+  crimeAnalysisResults: CrimeAnalysisResultsSchema.optional().describe("Resultados da classificação de crimes identificados no texto do documento."),
 });
 export type AnalyzeDocumentOutput = z.infer<typeof AnalyzeDocumentOutputSchema>;
 
@@ -123,7 +140,7 @@ export async function analyzeDocument(input: AnalyzeDocumentInput): Promise<Anal
 const analyzeDocumentPrompt = ai.definePrompt({
   name: 'analyzeDocumentPrompt',
   input: {schema: AnalyzeDocumentInputSchema},
-  output: {schema: AnalyzeDocumentOutputSchema},
+  output: {schema: AnalyzeDocumentOutputSchema.omit({ crimeAnalysisResults: true })}, // Crime analysis is a separate step
   prompt: `Você é uma Inteligência Artificial Policial Multifacetada, capaz de atuar em três papéis distintos e sequenciais para analisar um documento: Investigador de Polícia, Escrivão de Polícia e Delegado de Polícia.
 
 {{#if isMediaInput}}
@@ -186,6 +203,7 @@ Como Delegado, com base nas análises e extrações das fases anteriores, forne�
 -   **Considerações Legais Preliminares do Delegado**: Mencione, if possível, considerações legales preliminares, como possíveis enquadramentos penais (tipificações criminais) que podem estar relacionados aos fatos, ou outras implicações jurídicas relevantes. (Ex: "Os fatos, em tese, podem configurar o crime de Estelionato (Art. 171, CP)", "Necessário apurar possível crime de Ameaça (Art. 147, CP)", "Verificar se há incidência da Lei Maria da Penha"). Coloque no campo 'delegateAssessment.legalConsiderations'.
 
 Certifique-se de que a saída JSON esteja completa e siga o schema definido, especialmente para a Fase 1 (Análise Investigativa) que é obrigatória. Se alguma informação específica não puder ser extraída ou inferida para campos opcionais, deixe o campo correspondente vazio ou omita-o, mas tente ser o mais completo possível.
+O campo 'crimeAnalysisResults' será preenchido em uma etapa separada pelo sistema, não precisa se preocupar com ele neste prompt.
 `,
 });
 
@@ -193,41 +211,68 @@ const analyzeDocumentFlowInternal = ai.defineFlow(
   {
     name: 'analyzeDocumentFlowInternal',
     inputSchema: AnalyzeDocumentInputSchema, 
-    outputSchema: AnalyzeDocumentOutputSchema,
+    outputSchema: AnalyzeDocumentOutputSchema, // Now includes crimeAnalysisResults
   },
-  async (rawInput: AnalyzeDocumentInput) => { 
+  async (rawInput: AnalyzeDocumentInput): Promise<AnalyzeDocumentOutput> => { 
     const promptInput = {...rawInput};
 
     if (promptInput.fileDataUri && !promptInput.textContent) { // Path for directly processable media
         promptInput.isMediaInput = true;
     } else { // Path for textContent (original text or system message for unprocessable files)
         promptInput.isMediaInput = false;
-        // Ensure fileDataUri is not present if textContent is the source, to avoid confusion in the prompt or AI.
         if (promptInput.textContent) {
           delete promptInput.fileDataUri;
         }
     }
-    // In case neither is present, isMediaInput remains false, and the prompt's {{else}} branch handles it.
     
-    const {output} = await analyzeDocumentPrompt(promptInput); 
-    if (!output) {
+    const {output: mainAnalysisOutput} = await analyzeDocumentPrompt(promptInput); 
+    if (!mainAnalysisOutput) {
       throw new Error("A análise do documento não retornou um resultado válido.");
     }
     
-    if (!output.investigatorAnalysis) {
-        output.investigatorAnalysis = {
+    // Ensure investigatorAnalysis is always present as it's marked mandatory in the prompt logic
+    if (!mainAnalysisOutput.investigatorAnalysis) {
+        mainAnalysisOutput.investigatorAnalysis = {
             observations: "Nenhuma observação investigativa retornada pela IA.",
             potentialLeads: []
         };
     } else {
-        if (output.investigatorAnalysis.observations === undefined || output.investigatorAnalysis.observations === null || output.investigatorAnalysis.observations.trim() === "") {
-            output.investigatorAnalysis.observations = "Nenhuma observação investigativa específica fornecida.";
+        if (mainAnalysisOutput.investigatorAnalysis.observations === undefined || mainAnalysisOutput.investigatorAnalysis.observations === null || mainAnalysisOutput.investigatorAnalysis.observations.trim() === "") {
+            mainAnalysisOutput.investigatorAnalysis.observations = "Nenhuma observação investigativa específica fornecida.";
         }
-        if (output.investigatorAnalysis.potentialLeads === undefined || output.investigatorAnalysis.potentialLeads === null) {
-             output.investigatorAnalysis.potentialLeads = [];
+        if (mainAnalysisOutput.investigatorAnalysis.potentialLeads === undefined || mainAnalysisOutput.investigatorAnalysis.potentialLeads === null) {
+             mainAnalysisOutput.investigatorAnalysis.potentialLeads = [];
         }
     }
-    return output;
+
+    let crimeAnalysisResults: ClassifyTextForCrimesOutput | undefined = undefined;
+    // Only run crime classification if there's actual extracted text and it's not a system warning.
+    if (mainAnalysisOutput.extractedText && !mainAnalysisOutput.extractedText.startsWith("AVISO DO SISTEMA:") && mainAnalysisOutput.extractedText.trim() !== "Não foi possível extrair texto" && mainAnalysisOutput.extractedText.trim() !== "Documento é uma imagem sem conteúdo textual") {
+      try {
+        const crimeInput: ClassifyTextForCrimesInput = {
+          textContent: mainAnalysisOutput.extractedText,
+          context: `Documento analisado: ${rawInput.fileName || 'Nome de arquivo desconhecido'}`
+        };
+        crimeAnalysisResults = await classifyTextForCrimes(crimeInput);
+      } catch (crimeError) {
+        console.error("Erro na classificação de crimes:", crimeError);
+        // Optionally, populate crimeAnalysisResults with an error state or default
+        crimeAnalysisResults = {
+          crimeTags: [],
+          overallCriminalAssessment: "Falha ao realizar a classificação de crimes no texto do documento."
+        };
+      }
+    } else {
+       crimeAnalysisResults = {
+          crimeTags: [],
+          overallCriminalAssessment: "Nenhum texto útil extraído para análise de crimes."
+       };
+    }
+    
+    return {
+      ...mainAnalysisOutput,
+      crimeAnalysisResults: crimeAnalysisResults
+    };
   }
 );
 

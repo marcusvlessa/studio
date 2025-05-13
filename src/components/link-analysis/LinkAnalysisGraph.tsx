@@ -1,6 +1,7 @@
 
 "use client";
 
+import * as React from "react"; // Import React
 import type { Edge, Node, NodeProps } from "reactflow";
 import ReactFlow, {
   Controls,
@@ -12,7 +13,7 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 import type { FindEntityRelationshipsOutput } from "@/ai/flows/find-entity-relationships";
-import { useEffect, useMemo, useCallback, useRef } from "react"; // Added useRef
+import { useEffect, useMemo, useCallback, useRef } from "react"; 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -273,4 +274,3 @@ export function LinkAnalysisGraph({ relationshipsData, identifiedEntitiesData }:
     </Card>
   );
 }
-

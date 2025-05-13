@@ -12,27 +12,27 @@ import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
 const EntitySchema = z.object({
-  id: z.string().describe('Identificador único para a entidade no grafo.'),
+  id: z.string().describe('Identificador único para a entidade no grafo, preferencialmente o próprio label da entidade se for único, ou uma forma sanitizada dele.'),
   label: z.string().describe('O valor ou nome da entidade.'),
-  type: z.string().describe('O tipo inferido da entidade (ex: Pessoa, Organização, Localização, Telefone, Email, IP, Veículo, Evento, Transação Financeira, Documento, Website, Chave PIX, IMEI, ERB, Conta Bancária).'),
-  properties: z.string().optional().describe('Uma STRING JSON representando propriedades adicionais da entidade (ex: para Pessoa "{\"CPF\": \"XXX.XXX.XXX-XX\", \"RG\": \"12.345.678-9\"}"). Os valores dentro do JSON devem ser strings.')
+  type: z.string().describe('O tipo inferido da entidade (ex: Pessoa, Organização, Localização, Telefone, Email, IP, Veículo, Evento, Transação Financeira, Documento, Website, Chave PIX, IMEI, ERB, Conta Bancária, Arma de Fogo, Outros).'),
+  properties: z.string().optional().describe('Uma STRING JSON representando propriedades adicionais da entidade (ex: para Pessoa "{\"CPF\": \"XXX.XXX.XXX-XX\", \"RG\": \"12.345.678-9\"}"). Os valores dentro do JSON devem ser strings. Se não houver propriedades, envie uma string JSON vazia "{}" ou omita o campo.')
 });
 
 const RelationshipSchema = z.object({
-  source: z.string().describe('O ID da entidade de origem do relacionamento.'),
-  target: z.string().describe('O ID da entidade de destino do relacionamento.'),
-  label: z.string().describe('Uma descrição concisa do relacionamento (ex: "Comunicou com", "Transferiu para", "Associado a", "Proprietário de", "Localizado em", "Ocorreu em").'),
-  type: z.string().optional().describe('Um tipo categorizado de relacionamento (ex: Comunicação, Financeiro, Familiar, Profissional, Geográfico, Técnico).'),
-  direction: z.enum(["direcional", "bidirecional", "nao_direcional"]).optional().describe("A direcionalidade do relacionamento. 'direcional' de source para target, 'bidirecional' para ambos, 'nao_direcional' para associação sem direção clara."),
+  source: z.string().describe('O ID da entidade de origem do relacionamento (deve corresponder a um ID de `identifiedEntities`).'),
+  target: z.string().describe('O ID da entidade de destino do relacionamento (deve corresponder a um ID de `identifiedEntities`).'),
+  label: z.string().describe('Uma descrição concisa do relacionamento (ex: "Comunicou com", "Transferiu para", "Associado a", "Proprietário de", "Localizado em", "Ocorreu em", "Membro de").'),
+  type: z.string().optional().describe('Um tipo categorizado de relacionamento (ex: Comunicação, Financeiro, Familiar, Profissional, Geográfico, Técnico, Posse, Social).'),
+  direction: z.enum(["direcional", "bidirecional", "nao_direcional"]).optional().default("nao_direcional").describe("A direcionalidade do relacionamento. 'direcional' de source para target, 'bidirecional' para ambos, 'nao_direcional' para associação sem direção clara."),
   strength: z.number().min(0).max(1).optional().describe('Força estimada ou confiança do relacionamento (0 a 1), se aplicável.'),
-  properties: z.string().optional().describe('Uma STRING JSON representando propriedades adicionais do relacionamento (ex: "{\"data_hora\": \"DD/MM/AAAA HH:MM\", \"valor_texto\": \"R$ XXX,XX\"}"). Os valores dentro do JSON devem ser strings.')
+  properties: z.string().optional().describe('Uma STRING JSON representando propriedades adicionais do relacionamento (ex: "{\"data_hora\": \"DD/MM/AAAA HH:MM\", \"valor_texto\": \"R$ XXX,XX\", \"frequencia_texto\": \"3 vezes\"}"). Os valores dentro do JSON devem ser strings. Se não houver, envie "{}" ou omita.')
 });
 
 const FindEntityRelationshipsInputSchema = z.object({
   entities: z
     .array(z.string())
     .min(1, "Pelo menos uma entidade deve ser fornecida.")
-    .describe('Uma lista de textos ou valores brutos representando entidades a serem analisadas. A IA deve processar esta lista para identificar, classificar e encontrar relações.'),
+    .describe('Uma lista de textos ou valores brutos representando entidades a serem analisadas. A IA deve processar esta lista para identificar, classificar e encontrar relações. Se a lista parecer vir de uma tabela (várias strings curtas), considere que entidades na mesma "linha" conceitual podem estar relacionadas.'),
   analysisContext: z.enum(["Geral", "Telefonia", "Financeira", "Pessoas e Organizações", "Digital e Cibernética", "Investigação Criminal Genérica"])
     .optional()
     .default("Geral")
@@ -41,28 +41,25 @@ const FindEntityRelationshipsInputSchema = z.object({
 });
 export type FindEntityRelationshipsInput = z.infer<typeof FindEntityRelationshipsInputSchema>;
 
+const FinalEntitySchema = EntitySchema.extend({
+    properties: z.record(z.string()).optional()
+});
+const FinalRelationshipSchema = RelationshipSchema.extend({
+    properties: z.record(z.string()).optional()
+});
 
 const FindEntityRelationshipsOutputSchema = z.object({
-  identifiedEntities: z.array(EntitySchema.extend({
-    // Override properties for output to be a parsed object, not a JSON string
-    properties: z.record(z.string()).optional()
-  })).describe("Lista de todas as entidades únicas identificadas e classificadas pela IA a partir da entrada."),
-  relationships: z.array(RelationshipSchema.extend({
-    // Override properties for output to be a parsed object, not a JSON string
-    properties: z.record(z.string()).optional()
-  })).describe('Uma lista de relacionamentos identificados entre as entidades.'),
-  analysisSummary: z.string().optional().describe("Um breve resumo da análise de vínculos realizada pela IA, destacando os achados mais importantes ou dificuldades.")
+  identifiedEntities: z.array(FinalEntitySchema).describe("Lista de todas as entidades únicas identificadas e classificadas pela IA a partir da entrada."),
+  relationships: z.array(FinalRelationshipSchema).describe('Uma lista de relacionamentos identificados entre as entidades.'),
+  analysisSummary: z.string().optional().describe("Um resumo textual conciso da análise de vínculos realizada pela IA, destacando os achados mais importantes, padrões observados, entidades centrais, ou dificuldades encontradas. Deve ser redigido em linguagem clara e investigativa.")
 });
 export type FindEntityRelationshipsOutput = z.infer<typeof FindEntityRelationshipsOutputSchema>;
 
 // Define schemas for the prompt's expected output (with JSON strings for properties)
-const PromptEntitySchema = EntitySchema; // Uses string for properties
-const PromptRelationshipSchema = RelationshipSchema; // Uses string for properties
-
 const PromptOutputSchema = z.object({
-    identifiedEntities: z.array(PromptEntitySchema).describe("Lista de todas as entidades únicas identificadas e classificadas pela IA a partir da entrada."),
-    relationships: z.array(PromptRelationshipSchema).describe('Uma lista de relacionamentos identificados entre as entidades.'),
-    analysisSummary: z.string().optional().describe("Um breve resumo da análise de vínculos realizada pela IA, destacando os achados mais importantes ou dificuldades.")
+    identifiedEntities: z.array(EntitySchema).describe("Lista de todas as entidades únicas identificadas e classificadas pela IA a partir da entrada."),
+    relationships: z.array(RelationshipSchema).describe('Uma lista de relacionamentos identificados entre as entidades.'),
+    analysisSummary: z.string().optional().describe("Resumo textual da análise de vínculos.")
 });
 
 
@@ -82,70 +79,70 @@ export async function findEntityRelationships(
 const prompt = ai.definePrompt({
   name: 'findEntityRelationshipsPrompt',
   input: {schema: FindEntityRelationshipsInputSchema},
-  output: {schema: PromptOutputSchema}, // Use the schema with string properties for AI output
-  prompt: `Você é um especialista em análise de inteligência e construção de grafos de vínculos, modelado a partir das capacidades do IBM i2 Analyst's Notebook. Sua tarefa é analisar uma lista de entidades de entrada, identificar entidades distintas, classificá-las e, o mais importante, inferir e descrever os relacionamentos entre elas, incluindo a criação de novas entidades implícitas se necessário (como eventos ou transações que conectam outras entidades).
+  output: {schema: PromptOutputSchema}, 
+  prompt: `Você é um especialista em análise de inteligência e construção de grafos de vínculos, modelado a partir das capacidades do IBM i2 Analyst's Notebook. Sua tarefa é analisar uma lista de entidades de entrada, identificar entidades distintas, classificá-las e, o mais importante, inferir e descrever os relacionamentos entre elas. Se necessário, crie entidades implícitas (como Eventos ou Transações) para conectar outras entidades de forma significativa.
 
 **Contexto da Análise:** {{{analysisContext}}}
 {{#if fileOrigin}}Arquivo de Origem dos Dados: {{{fileOrigin}}}{{/if}}
 
-**Entidades Brutas Fornecidas para Análise (pré-processadas ou extraídas de um arquivo):**
+**Entidades Brutas Fornecidas para Análise (podem ser texto extraído de um arquivo, incluindo linhas de tabela):**
 {{#if entities.length}}
   {{#each entities}}
     - {{{this}}}
   {{/each}}
 {{else}}
-  - Nenhuma entidade bruta fornecida (analise o contexto, se houver).
+  - Nenhuma entidade bruta fornecida.
 {{/if}}
 
 **Instruções Detalhadas:**
 
 1.  **Identificação e Classificação de Entidades (Campo: identifiedEntities):**
     *   Processe a lista de 'Entidades Brutas'. Identifique entidades únicas e significativas.
-    *   Para CADA entidade identificada, atribua um 'id' único (sugestão: use o próprio valor da entidade se for único e adequado como ID, ou um prefixo_valor).
-    *   Classifique CADA entidade com um 'type' o mais específico possível. Use os seguintes tipos PRIMÁRIOS e refinar se possível:
-        *   **Pessoa:** (Ex: João Silva, Maria Oliveira). Propriedades podem incluir CPF (como string JSON: "{\"CPF\": \"XXX.XXX.XXX-XX\", \"RG\": \"XX.XXX.XXX-X\"}").
-        *   **Organização:** (Ex: Empresa XYZ Ltda, Polícia Civil). Propriedades podem incluir CNPJ (como string JSON: "{\"CNPJ\": \"XX.XXX.XXX/XXXX-XX\"}").
-        *   **Localização:** (Ex: Rua Principal 123, Porto Alegre, RS; Coordenada -30.0346° S, -51.2177° W).
-        *   **Telefone:** (Ex: (XX) XXXXX-XXXX, +55 XX XXXXX-XXXX). Propriedades podem incluir operadora (string JSON: "{\"operadora\": \"Vivo\"}"), tipo (string JSON: "{\"tipo\": \"celular\"}").
-        *   **Email:** (Ex: usuario@dominio.com).
-        *   **Endereço IP:** (Ex: 192.168.1.1). Propriedades podem incluir geolocalização IP (string JSON: "{\"geolocalizacao_ip\": \"Brasil\"}").
-        *   **Veículo:** (Ex: Placa XXX-0000, Chassi YYYYYYY). Propriedades podem incluir marca, modelo, cor (string JSON: "{\"marca\": \"Ford\", \"modelo\": \"Fiesta\", \"cor\": \"Preto\"}").
-        *   **Evento/Incidente:** (Ex: Roubo a Banco na Data X, Homicídio Local Y). Propriedades podem incluir data/hora, tipo de crime (string JSON: "{\"data_hora\": \"10/10/2023 14:30\", \"tipo_crime\": \"Roubo\"}"). ESTA ENTIDADE PODE SER CRIADA PELA IA para conectar outras entidades.
-        *   **Transação Financeira:** (Ex: Transferência R$1000 de Conta A para Conta B). Propriedades podem incluir valor_texto, data/hora, tipo, contas (string JSON: "{\"valor_texto\": \"R$1000,00\", \"data_hora\": \"10/10/2023 15:00\", \"tipo\": \"PIX\"}"). ESTA ENTIDADE PODE SER CRIADA PELA IA.
-        *   **Documento (Referência):** (Ex: Contrato Nº ZZZ, Relatório XXX). Propriedades podem incluir tipo de documento, data (string JSON: "{\"tipo_documento\": \"Contrato\", \"data\": \"01/01/2023\"}").
-        *   **Website/URL:** (Ex: https://www.exemplo.com).
-        *   **Chave PIX:** (Ex: CPF, CNPJ, Email, Telefone, Aleatória associada a uma Pessoa ou Organização).
-        *   **IMEI:** (Ex: 35XXXXXXXXXXXXX).
-        *   **ERB (Estação Rádio Base):** (Ex: ERB-12345). Propriedades podem incluir localização (string JSON: "{\"localizacao_erb\": \"Torre Celular Central\"}").
-        *   **Conta Bancária:** (Ex: Agência 0001 Conta 12345-6). Propriedades podem incluir banco (string JSON: "{\"banco\": \"Banco do Brasil\"}").
-        *   **Item/Objeto Físico:** (Ex: Arma de Fogo, Notebook Dell).
-        *   **Outros:** Use se nenhuma das anteriores se aplicar, e especifique.
-    *   Se uma entidade bruta puder ser decomposta em várias (ex: uma linha de CSV com nome, telefone e CPF), crie entidades separadas para cada um, se fizer sentido para a análise de vínculos.
-    *   Para o campo 'properties' de cada entidade, se houver propriedades, elas DEVEM ser uma STRING JSON válida. Exemplo: "{\"CPF\": \"123.456.789-00\", \"RG\": \"1234567\"}". Se não houver propriedades, omita o campo 'properties' ou envie uma string JSON vazia "{}".
+    *   Para CADA entidade identificada:
+        *   Atribua um 'id' único. Use o próprio valor da entidade ('label') como ID se for razoavelmente único e curto, caso contrário, crie um ID baseado no label (ex: "Pessoa_Joao_Silva").
+        *   Atribua um 'label' que é o valor textual da entidade.
+        *   Classifique com um 'type' o mais específico possível, usando os tipos PRIMÁRIOS listados abaixo e refinando quando possível. Priorize a especificidade conforme o 'analysisContext'.
+            *   **Pessoa:** (Ex: João Silva). Propriedades: "{\"CPF\": \"XXX.XXX.XXX-XX\", \"RG\": \"XX.XXX.XXX-X\", \"Nascimento_texto\": \"DD/MM/AAAA\"}".
+            *   **Organização:** (Ex: Empresa XYZ Ltda, Polícia Civil). Propriedades: "{\"CNPJ\": \"XX.XXX.XXX/XXXX-XX\", \"Tipo\": \"ONG\"}".
+            *   **Localização:** (Ex: Rua Principal 123, Porto Alegre; Coordenada GEO: -30.03, -51.21). Propriedades: "{\"CEP\": \"XXXXX-XXX\", \"Cidade\": \"Nome Cidade\"}".
+            *   **Telefone:** (Ex: (XX) XXXXX-XXXX). Propriedades: "{\"Operadora\": \"Vivo\", \"TipoLinha\": \"Celular\", \"IMEI_associado\": \"XXXXXXXXXXXXXXX\"}".
+            *   **Email:** (Ex: usuario@dominio.com).
+            *   **Endereço IP:** (Ex: 192.168.1.1). Propriedades: "{\"Provedor\": \"Nome Provedor\", \"GeolocalizacaoIP_texto\": \"Cidade, País\"}".
+            *   **Veículo:** (Ex: Placa XXX-0000). Propriedades: "{\"Marca\": \"Ford\", \"Modelo\": \"Fiesta\", \"Cor\": \"Preto\", \"Chassi\": \"YYYYYYYYY\"}".
+            *   **Evento/Incidente:** (Ex: Assalto Banco X em DD/MM/AA). Propriedades: "{\"DataHora_texto\": \"DD/MM/AAAA HH:MM\", \"TipoCrime\": \"Roubo\", \"Local\": \"Rua Tal\"}". *PODE SER CRIADO PELA IA para conectar outras entidades.*
+            *   **Transação Financeira:** (Ex: PIX R$1000 ContaA para ContaB). Propriedades: "{\"Valor_texto\": \"R$1000,00\", \"DataHora_texto\": \"DD/MM/AAAA HH:MM\", \"Tipo\": \"PIX\", \"Origem\": \"Conta X\", \"Destino\": \"Conta Y\"}". *PODE SER CRIADO PELA IA.*
+            *   **Documento (Referência):** (Ex: Contrato Nº ZZZ). Propriedades: "{\"TipoDocumento\": \"Contrato\", \"Data_texto\": \"DD/MM/AAAA\"}".
+            *   **Website/URL:** (Ex: https://www.exemplo.com).
+            *   **Chave PIX:** (Ex: CPF, CNPJ, Email, Telefone, Aleatória associada a Pessoa/Organização). SEPARAR Chave PIX como entidade e relacionar à Pessoa/Organização dona.
+            *   **IMEI:** (Ex: 35XXXXXXXXXXXXX). Relacionar a entidades Telefone, se possível.
+            *   **ERB (Estação Rádio Base):** (Ex: ERB-12345). Propriedades: "{\"LocalizacaoERB_texto\": \"Endereço ou Coordenada\"}".
+            *   **Conta Bancária:** (Ex: Ag:0001 C:12345-6). Propriedades: "{\"Banco\": \"Nome Banco\", \"TitularID\": \"ID da Pessoa/Organização\"}".
+            *   **Arma de Fogo:** (Ex: Pistola Taurus G2C). Propriedades: "{\"NumeroSerie\": \"XXXXX\", \"Calibre_texto\": \".40\"}".
+            *   **Outros:** Para entidades que não se encaixam acima, seja específico.
+    *   Se uma entidade bruta parecer ser uma linha de dados tabulares (ex: "João Silva,(XX)XXXXX-XXXX,XXX.XXX.XXX-XX"), decomponha-a em múltiplas entidades (Pessoa, Telefone, CPF) e INFERA relacionamentos entre elas (ex: João Silva "possui" Telefone, João Silva "possui" CPF).
+    *   Para o campo 'properties', SE HOUVER propriedades, elas DEVEM ser uma STRING JSON válida (ex: "{\"CPF\": \"123.456.789-00\"}"). Se NÃO HOUVER, omita o campo 'properties' ou envie uma string JSON vazia como "{}".
 
 2.  **Inferência e Descrição de Relacionamentos (Campo: relationships):**
-    *   Identifique relacionamentos diretos e INDIRETOS (se possível, através de entidades intermediárias como Eventos ou Transações) entre as 'identifiedEntities'.
+    *   Identifique relacionamentos DIRETOS e INDIRETOS (através de entidades intermediárias como Eventos ou Transações) entre as 'identifiedEntities'.
     *   Para CADA relacionamento:
-        *   'source': ID da entidade de origem.
-        *   'target': ID da entidade de destino.
-        *   'label': Descrição textual concisa do relacionamento. Ex: "Comunicou com", "Efetuou Pagamento para", "Reside em", "Registrado em nome de", "Utilizou ERB", "Associado a".
-        *   'type': (Opcional) Categorize o relacionamento (ex: Comunicação, Financeiro, Familiar, Profissional, Propriedade, Localização, Técnico, Participação em Evento).
-        *   'direction': (Opcional) "direcional" (ex: Pessoa -> Telefone "possui"), "bidirecional" (ex: Pessoa <-> Pessoa "comunicou com"), "nao_direcional" (ex: Pessoa - Evento "participou de").
-        *   'strength': (Opcional) Estime a confiança da IA na existência desse vínculo (0.0 a 1.0).
-        *   'properties': (Opcional) STRING JSON com detalhes adicionais. Ex: para "Comunicou com", "{\"data_hora_inicio\": \"DD/MM/AAAA HH:MM\", \"duracao_segundos_texto\": \"120\"}". Se não houver, omita ou envie "{}" como string JSON.
+        *   'source' e 'target': IDs das entidades de origem/destino (DEVEM existir em 'identifiedEntities').
+        *   'label': Descrição textual concisa (Ex: "Comunicou com", "Transferiu R$X para", "Reside em", "Proprietário de", "Utilizou ERB").
+        *   'type': (Opcional) Categorize (Ex: Comunicação, Financeiro, Familiar, Profissional, Propriedade, Localização, Técnico, Participação em Evento, Social).
+        *   'direction': (Opcional) "direcional", "bidirecional", ou "nao_direcional".
+        *   'strength': (Opcional) Confiança (0.0 a 1.0).
+        *   'properties': (Opcional) STRING JSON com detalhes (Ex: "{\"data_hora_inicio\": \"DD/MM/AAAA HH:MM\", \"duracao_segundos_texto\": \"120\"}"). Se NÃO HOUVER, omita ou envie "{}".
+    *   Se as 'Entidades Brutas' vierem de uma tabela, entidades da mesma linha provavelmente estão relacionadas (ex: Pessoa "possui" Telefone da mesma linha).
 
-3.  **Considerações Específicas do Contexto ({{{analysisContext}}}):** (Mesmas instruções)
+3.  **Criação de Entidades Implícitas:** Se, por exemplo, Pessoa A e Pessoa B são mencionadas em conexão com um "assalto dia X", crie uma entidade 'Evento/Incidente' "Assalto Dia X" e relacione Pessoa A e Pessoa B a este evento. Propriedades do evento também como STRING JSON.
 
-4.  **Criação de Entidades Implícitas:** (Mesmas instruções, mas lembre-se que as propriedades dessas novas entidades também devem ser strings JSON).
+4.  **Resumo da Análise (Campo: analysisSummary):**
+    *   Forneça um resumo textual conciso (2-4 parágrafos) da análise de vínculos.
+    *   Destaque: entidades centrais (com muitas conexões), principais grupos/clusters, tipos de relacionamentos mais comuns, e quaisquer padrões ou anomalias observadas.
+    *   Se a análise foi desafiadora devido à natureza dos dados, mencione brevemente.
+    *   O tom deve ser objetivo e investigativo.
 
-5.  **Análise de Vínculos i2 Style:** (Mesmas instruções, lembrando que as propriedades dos eventos devem ser strings JSON. Ex: "{\"data_encontro_texto\": \"10/10/2023\"}").
-
-6.  **Output (Schema):** Popule rigorosamente os campos 'identifiedEntities' e 'relationships' conforme o schema, LEMBRANDO que o campo 'properties' DEVE SER UMA STRING JSON. Se um relacionamento não for claro, atribua uma 'strength' menor.
-
-7.  **Resumo da Análise (analysisSummary):** Forneça um breve resumo textual dos principais achados, complexidades ou limitações da análise.
-
-Se a lista de 'Entidades Brutas' for muito pequena ou os itens forem muito genéricos, faça o melhor possível para extrair significado e inferir relações, mesmo que com baixa confiança. Se for impossível, indique isso no 'analysisSummary'.
-Foco na QUALIDADE e ESPECIFICIDADE dos tipos de entidade e na CLAREZA das descrições dos relacionamentos.
+Se a lista de 'Entidades Brutas' for pequena ou genérica, faça o melhor possível. Se for impossível, indique no 'analysisSummary'.
+Foco na QUALIDADE e ESPECIFICIDADE dos tipos de entidade e na CLAREZA das descrições dos relacionamentos. Certifique-se de que TODOS os IDs em 'relationships' correspondam a IDs em 'identifiedEntities'.
 `,
 });
 
@@ -157,7 +154,7 @@ const findEntityRelationshipsFlow = ai.defineFlow(
   },
   async (input: FindEntityRelationshipsInput): Promise<FindEntityRelationshipsOutput> => {
     
-    const MAX_ENTITIES_TO_PROCESS = 100; 
+    const MAX_ENTITIES_TO_PROCESS = 150; // Increased limit slightly
     let processedEntitiesInput = input.entities;
     let analysisSummaryPrefix = "";
 
@@ -171,7 +168,7 @@ const findEntityRelationshipsFlow = ai.defineFlow(
       entities: processedEntitiesInput
     };
 
-    const {output: rawOutput} = await prompt(promptInput); // rawOutput contains properties as JSON strings
+    const {output: rawOutput} = await prompt(promptInput);
     if (!rawOutput) {
       return {
         identifiedEntities: [],
@@ -181,16 +178,21 @@ const findEntityRelationshipsFlow = ai.defineFlow(
     }
     
     const entityIdMap = new Map<string, number>();
+    const originalIdToNewLabelIdMap = new Map<string, string>();
 
     const parsedIdentifiedEntities: FindEntityRelationshipsOutput['identifiedEntities'] = rawOutput.identifiedEntities.map(entity => {
-      let newId = entity.label.replace(/[^a-zA-Z0-9_.]/g, '_').substring(0, 50); // Sanitize and shorten
-      if (entityIdMap.has(newId)) {
-        let count = entityIdMap.get(newId)! + 1;
-        entityIdMap.set(newId, count);
-        newId = `${newId}_${count}`;
-      } else {
-        entityIdMap.set(newId, 1);
+      // Sanitize label to form a base for newId, ensuring it's more ReactFlow friendly
+      let baseId = entity.label.replace(/[^a-zA-Z0-9_.-]/g, '_').replace(/\.$/, '').substring(0, 50);
+      if (baseId.length === 0) baseId = `entidade_${crypto.randomUUID().substring(0,8)}`;
+
+      let newLabelId = baseId;
+      let count = entityIdMap.get(baseId) || 0;
+      if (count > 0) {
+        newLabelId = `${baseId}_${count}`;
       }
+      entityIdMap.set(baseId, count + 1);
+
+      originalIdToNewLabelIdMap.set(entity.id, newLabelId); // Map AI's original ID to new graph ID
 
       let parsedProperties: Record<string, string> = {};
       if (typeof entity.properties === 'string' && entity.properties.trim() !== "" && entity.properties.trim() !== "{}") {
@@ -199,27 +201,22 @@ const findEntityRelationshipsFlow = ai.defineFlow(
           if (typeof parsed === 'object' && parsed !== null) {
             for (const key in parsed) {
               if (Object.prototype.hasOwnProperty.call(parsed, key)) {
-                parsedProperties[key] = String(parsed[key]);
+                parsedProperties[key] = String(parsed[key]); // Ensure all property values are strings
               }
             }
           } else {
-             console.warn(`Properties field for entity ${entity.label} was a JSON string but not an object: ${entity.properties}`);
+             console.warn(`Campo de propriedades para entidade ${entity.label} era uma string JSON, mas não um objeto: ${entity.properties}`);
           }
         } catch (e) {
-          console.warn(`Failed to parse JSON properties for entity ${entity.label}: ${entity.properties}`, e);
-          // Store the original string if parsing fails, perhaps under a special key
-          // parsedProperties['_raw_properties_parse_error'] = entity.properties;
+          console.warn(`Falha ao parsear propriedades JSON para entidade ${entity.label}: ${entity.properties}`, e);
         }
       }
-      
-      return { ...entity, id: newId, properties: parsedProperties };
+      return { ...entity, id: newLabelId, properties: parsedProperties }; // Use newLabelId as the graph node ID
     });
-
-    const entityOriginalIdToNewIdMap = new Map(rawOutput.identifiedEntities.map((oe, index) => [oe.id, parsedIdentifiedEntities[index].id]));
     
     const parsedRelationships: FindEntityRelationshipsOutput['relationships'] = rawOutput.relationships.map(rel => {
-        const newSourceId = entityOriginalIdToNewIdMap.get(rel.source) || rel.source; // Fallback if original ID not in map
-        const newTargetId = entityOriginalIdToNewIdMap.get(rel.target) || rel.target; // Fallback
+        const newSourceId = originalIdToNewLabelIdMap.get(rel.source);
+        const newTargetId = originalIdToNewLabelIdMap.get(rel.target);
         
         let parsedRelProperties: Record<string, string> = {};
          if (typeof rel.properties === 'string' && rel.properties.trim() !== "" && rel.properties.trim() !== "{}") {
@@ -232,32 +229,37 @@ const findEntityRelationshipsFlow = ai.defineFlow(
                         }
                     }
                 } else {
-                    console.warn(`Properties field for relationship ${rel.label} was a JSON string but not an object: ${rel.properties}`);
+                    console.warn(`Campo de propriedades para relacionamento ${rel.label} era uma string JSON, mas não um objeto: ${rel.properties}`);
                 }
             } catch (e) {
-                console.warn(`Failed to parse JSON properties for relationship ${rel.label}: ${rel.properties}`, e);
+                console.warn(`Falha ao parsear propriedades JSON para relacionamento ${rel.label}: ${rel.properties}`, e);
             }
         }
-
-        return {
-            ...rel,
-            source: newSourceId,
-            target: newTargetId,
-            properties: parsedRelProperties,
-        };
-    }).filter(rel => { // Filter out edges with non-existent nodes AFTER ID mapping
-      const sourceNodeExists = parsedIdentifiedEntities.some(node => node.id === rel.source);
-      const targetNodeExists = parsedIdentifiedEntities.some(node => node.id === rel.target);
-      if (!sourceNodeExists) console.warn(`Filtered out edge due to missing source node: ${rel.source}`);
-      if (!targetNodeExists) console.warn(`Filtered out edge due to missing target node: ${rel.target}`);
-      return rel.source && rel.target && sourceNodeExists && targetNodeExists;
-    });
+        
+        // Return the relationship only if both source and target IDs were successfully mapped
+        if (newSourceId && newTargetId) {
+          return {
+              ...rel,
+              source: newSourceId,
+              target: newTargetId,
+              properties: parsedRelProperties,
+          };
+        }
+        return null; // Mark for filtering
+    }).filter(rel => {
+        if (!rel) return false; // Filter out nulls from failed ID mapping
+        const sourceNodeExists = parsedIdentifiedEntities.some(node => node.id === rel.source);
+        const targetNodeExists = parsedIdentifiedEntities.some(node => node.id === rel.target);
+        if (!sourceNodeExists) console.warn(`Filtrando aresta devido a nó de origem (${rel.source}) ausente para o relacionamento: ${rel.label}`);
+        if (!targetNodeExists) console.warn(`Filtrando aresta devido a nó de destino (${rel.target}) ausente para o relacionamento: ${rel.label}`);
+        return rel.source && rel.target && sourceNodeExists && targetNodeExists;
+    }) as FindEntityRelationshipsOutput['relationships']; // Cast back after filtering nulls
 
 
     return {
       identifiedEntities: parsedIdentifiedEntities,
       relationships: parsedRelationships,
-      analysisSummary: analysisSummaryPrefix + (rawOutput.analysisSummary || "Análise concluída.")
+      analysisSummary: analysisSummaryPrefix + (rawOutput.analysisSummary || "Análise concluída. Nenhum resumo adicional fornecido pela IA.")
     };
   }
 );

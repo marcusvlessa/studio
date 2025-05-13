@@ -1,4 +1,3 @@
-
 "use client";
 
 import * as React from "react"; 
@@ -12,22 +11,25 @@ import ReactFlow, {
   MarkerType,
 } from "reactflow";
 import "reactflow/dist/style.css";
-import type { FindEntityRelationshipsOutput } from "@/ai/flows/find-entity-relationships";
+// Use the specific output type from the AI flow which now has parsed properties
+import type { FindEntityRelationshipsOutput } from "@/ai/flows/find-entity-relationships"; 
 import { useEffect, useMemo, useCallback, useRef } from "react"; 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { LayoutGrid, Share2, ZoomIn, ZoomOut, Download } from "lucide-react";
+import { LayoutGrid, Share2, ZoomIn, ZoomOut } from "lucide-react";
 
 import dagre from 'dagre';
-import type { IdentifiedEntity, Relationship } from "@/ai/flows/find-entity-relationships"; // Assuming these types are exported
+// Use the specific IdentifiedEntity and Relationship types that reflect the *final parsed structure*
+type IdentifiedEntityForGraph = FindEntityRelationshipsOutput['identifiedEntities'][number];
+type RelationshipForGraph = FindEntityRelationshipsOutput['relationships'][number];
 
 
 interface CustomNodeData {
   label: string; 
   type?: string;  
   isHighlighted?: boolean;
-  properties?: Record<string, string>; // Changed from any to string based on AI flow update
+  properties?: Record<string, string>; 
 }
 
 
@@ -62,9 +64,9 @@ const CustomNodeComponent = React.memo(({ data, selected }: NodeProps<CustomNode
       {data.properties && Object.keys(data.properties).length > 0 && (
         <div style={{...typeStyle, marginTop: '4px', fontSize: '9px', textAlign: 'left'}}>
           {Object.entries(data.properties).slice(0,2).map(([key, value]) => (
-            <div key={key} style={{whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}} title={`${key}: ${String(value)}`}>{`${key.substring(0,10)}: ${String(value).substring(0,15)}...`}</div>
+            <div key={key} style={{whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}} title={`${key}: ${String(value)}`}>{`${key.substring(0,10)}: ${String(value).substring(0,15)}${String(value).length > 15 ? '...' : ''}`}</div>
           ))}
-           {Object.keys(data.properties).length > 2 && <div>...</div>}
+           {Object.keys(data.properties).length > 2 && <div title={Object.entries(data.properties).map(([k,v]) => `${k}: ${v}`).join('\n')}>... (mais {Object.keys(data.properties).length -2})</div>}
         </div>
       )}
     </div>
@@ -78,15 +80,15 @@ const customNodeTypes = {
 };
 
 interface LinkAnalysisGraphProps {
-    relationshipsData: Relationship[]; // Use specific type from AI flow
-    identifiedEntitiesData: IdentifiedEntity[]; // Use specific type from AI flow
+    relationshipsData: RelationshipForGraph[]; 
+    identifiedEntitiesData: IdentifiedEntityForGraph[]; 
 }
 
 interface EdgeData {
   label: string;
   type?: string;
   strength?: number;
-  properties?: Record<string, string>; // Changed to string
+  properties?: Record<string, string>; 
   direction?: "direcional" | "bidirecional" | "nao_direcional";
 }
 
@@ -98,7 +100,12 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = 'TB') => 
   dagreGraph.setGraph({ rankdir: direction, nodesep: 100, ranksep: 100 }); 
 
   nodes.forEach((node) => {
-    dagreGraph.setNode(node.id, { width: 180, height: 70 + (node.data.properties && Object.keys(node.data.properties).length > 0 ? 20 * Math.min(2, Object.keys(node.data.properties).length) : 0) }); 
+    let height = 70;
+    if (node.data.properties && Object.keys(node.data.properties).length > 0) {
+        height += (20 * Math.min(2, Object.keys(node.data.properties).length));
+        if (Object.keys(node.data.properties).length > 2) height += 15; // for the "..." line
+    }
+    dagreGraph.setNode(node.id, { width: 180, height }); 
   });
 
   edges.forEach((edge) => {
@@ -111,7 +118,13 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = 'TB') => 
     const nodeWithPosition = dagreGraph.node(node.id);
     node.targetPosition = isHorizontal ? 'left' : 'top';
     node.sourcePosition = isHorizontal ? 'right' : 'bottom';
-    node.position = { x: nodeWithPosition.x - (180/2), y: nodeWithPosition.y - ( (70 + (node.data.properties && Object.keys(node.data.properties).length > 0 ? 20 * Math.min(2, Object.keys(node.data.properties).length) : 0))/2 ) };
+    
+    let height = 70;
+     if (node.data.properties && Object.keys(node.data.properties).length > 0) {
+        height += (20 * Math.min(2, Object.keys(node.data.properties).length));
+        if (Object.keys(node.data.properties).length > 2) height += 15;
+    }
+    node.position = { x: nodeWithPosition.x - (180/2), y: nodeWithPosition.y - (height/2) };
   });
 
   return { nodes: [...nodes], edges: [...edges] };
@@ -121,7 +134,7 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = 'TB') => 
 export function LinkAnalysisGraph({ relationshipsData, identifiedEntitiesData }: LinkAnalysisGraphProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<CustomNodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<EdgeData>([]);
-  const reactFlowInstance = useRef<any>(null);
+  const reactFlowInstance = useRef<any>(null); // Using any for reactFlowInstance for simplicity
 
 
   useEffect(() => {
@@ -137,7 +150,7 @@ export function LinkAnalysisGraph({ relationshipsData, identifiedEntitiesData }:
       data: { 
         label: entity.label, 
         type: entity.type,
-        properties: typeof entity.properties === 'object' && entity.properties !== null ? entity.properties : {}
+        properties: entity.properties // Already Record<string, string> from parsed output
       },
       position: { x: Math.random() * 400, y: Math.random() * 400 }, 
     }));
@@ -172,7 +185,7 @@ export function LinkAnalysisGraph({ relationshipsData, identifiedEntitiesData }:
         label: rel.label,
         type: rel.type,
         strength: rel.strength,
-        properties: typeof rel.properties === 'object' && rel.properties !== null ? rel.properties : {},
+        properties: rel.properties, // Already Record<string, string>
         direction: rel.direction
       }
     }));
@@ -274,4 +287,3 @@ export function LinkAnalysisGraph({ relationshipsData, identifiedEntitiesData }:
     </Card>
   );
 }
-

@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { FileImage, Search, RotateCcw, Loader2, Sparkles, Smile, FolderKanban, Info, Car, GalleryHorizontalEnd } from "lucide-react"; 
+import { FileImage, Search, RotateCcw, Loader2, Sparkles, Smile, FolderKanban, Info, Car, GalleryHorizontalEnd, Download } from "lucide-react"; 
 import { useToast } from "@/hooks/use-toast";
 import { analyzeImage, type AnalyzeImageInput, type AnalyzeImageOutput } from "@/ai/flows/analyze-image";
 import Image from "next/image"; 
@@ -45,7 +45,7 @@ function ImageAnalysisContent() {
       type: "Imagem",
       summary: `Análise de imagem: ${selectedFile.name} - ${aiOutput.description.substring(0, 50)}...`,
       originalFileName: selectedFile.name,
-      data: aiOutput, // This now includes enhancedPhotoDataUri if available
+      data: aiOutput,
     };
     
     try {
@@ -163,6 +163,27 @@ function ImageAnalysisContent() {
         fileInputRef.current.value = "";
     }
     toast({ title: "Reiniciado", description: "Imagem e resultados da análise foram limpos." });
+  };
+
+  const handleDownloadEnhancedImage = () => {
+    if (analysisResult?.enhancedPhotoDataUri && selectedFile) {
+      const link = document.createElement('a');
+      link.href = analysisResult.enhancedPhotoDataUri;
+      
+      const originalFileName = selectedFile.name;
+      const extensionIndex = originalFileName.lastIndexOf('.');
+      const baseName = extensionIndex > 0 ? originalFileName.substring(0, extensionIndex) : originalFileName;
+      const extension = extensionIndex > 0 ? originalFileName.substring(extensionIndex) : '.png'; // Default to png if no ext
+      
+      link.download = `${baseName}_aprimorada${extension}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(link.href);
+      toast({title: "Download Iniciado", description: "A imagem aprimorada está sendo baixada."});
+    } else {
+      toast({variant: "destructive", title: "Download Falhou", description: "Nenhuma imagem aprimorada disponível para download."});
+    }
   };
 
 
@@ -336,7 +357,12 @@ function ImageAnalysisContent() {
           {analysisResult.enhancedPhotoDataUri && (
             <Card className="mt-6">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2"><GalleryHorizontalEnd className="h-6 w-6 text-primary"/> Imagem Melhorada pela IA</CardTitle>
+                <CardTitle className="flex items-center justify-between">
+                  <div className="flex items-center gap-2"><GalleryHorizontalEnd className="h-6 w-6 text-primary"/> Imagem Melhorada pela IA</div>
+                   <Button variant="outline" size="sm" onClick={handleDownloadEnhancedImage}>
+                     <Download className="mr-2 h-4 w-4" /> Baixar Imagem Aprimorada
+                   </Button>
+                </CardTitle>
                 <CardDescription>Esta é a versão da imagem aprimorada pela IA para melhor visualização de detalhes.</CardDescription>
               </CardHeader>
               <CardContent>

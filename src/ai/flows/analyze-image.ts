@@ -37,7 +37,7 @@ const VehicleDetailSchema = z.object({
 });
 
 const AnalyzeImageOutputSchema = z.object({
-  description: z.string().describe('Uma descrição detalhada do conteúdo da imagem.'),
+  description: z.string().describe('Uma descrição detalhada do conteúdo da imagem, incluindo menção explícita à marca e modelo de quaisquer veículos reconhecidos.'),
   possiblePlateRead: z.string().optional().describe('Uma leitura plausível de placa de veículo, se detectada.'),
   enhancementSuggestions: z.array(z.string()).optional().describe('Sugestões de técnicas de melhoramento de imagem que poderiam ser aplicadas e porquê, incluindo as que foram implicitamente usadas pela IA para a análise (se aplicável).'),
   facialRecognition: z.object({
@@ -86,7 +86,7 @@ const analyzeImageTextPrompt = ai.definePrompt({
   {{media url=photoDataUri}}
 
   Siga estas instruções:
-  1.  **Descrição Detalhada**: Descreva a imagem em detalhes, incluindo objetos, pessoas, ambiente, ações e qualquer outra informação relevante.
+  1.  **Descrição Detalhada**: Descreva a imagem em detalhes, incluindo objetos, pessoas, ambiente, ações e qualquer outra informação relevante. **Crucialmente, se veículos forem identificados (item 5), inclua a marca e modelo de cada veículo reconhecido diretamente nesta descrição textual.**
   2.  **Leitura de Placa (se aplicável)**: Preste muita atenção à identificação de qualquer texto na imagem, como placas de veículos. Se uma placa for detectada, forneça uma leitura plausível, mas apenas se tiver pelo menos 75% de certeza da leitura. Se nenhuma placa for claramente legível, indique isso.
   3.  **Sugestões e Aplicações de Melhoramento**:
       *   Se a qualidade da imagem puder ser melhorada para análise (ex: baixa luminosidade, borrada, ruído), sugira técnicas de processamento de imagem que poderiam ser aplicadas (ex: ajuste de contraste, nitidez, redução de ruído, deinterlacing). Explique brevemente por que cada técnica seria útil.
@@ -100,6 +100,7 @@ const analyzeImageTextPrompt = ai.definePrompt({
   5.  **Identificação de Veículos**:
       *   Se veículos forem visíveis na imagem, tente identificar a marca (ex: Ford, Volkswagen, Fiat) e o modelo (ex: Fiesta, Gol, Palio) de cada um.
       *   Para cada veículo identificado, preencha os campos 'make', 'model' e 'confidence' (0 a 1) no array 'vehicleDetails'. Se não for possível determinar a marca ou modelo, deixe os campos correspondentes vazios ou indique "Desconhecido(a)". Se nenhum veículo for detectado, o array 'vehicleDetails' deve ser vazio.
+      *   Lembre-se de incorporar a marca e modelo dos veículos identificados aqui na Descrição Detalhada (item 1).
 
   Seja objetivo e forneça informações factuais baseadas na imagem. Certifique-se de preencher todos os campos do schema de saída (exceto 'enhancedPhotoDataUri'), mesmo que com valores indicando ausência de informação (ex: "Nenhuma placa detectada", lista vazia para sugestões, 0 para faces).
 `,
@@ -136,11 +137,11 @@ const analyzeImageFlow = ai.defineFlow(
       ];
       
       const { media } = await ai.generate({
-        model: 'googleai/gemini-2.0-flash-exp', // Explicitly use the image generation capable model
+        model: 'googleai/gemini-2.0-flash-exp', 
         prompt: enhancementPrompt,
         config: {
-          responseModalities: ['TEXT', 'IMAGE'], // Must request IMAGE modality
-          safetySettings: [ // Relax safety settings if needed for forensic images, use with caution
+          responseModalities: ['TEXT', 'IMAGE'], 
+          safetySettings: [ 
             { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
             { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
             { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },

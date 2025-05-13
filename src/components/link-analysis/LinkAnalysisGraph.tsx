@@ -145,6 +145,9 @@ function InnerGraph({ relationshipsData, identifiedEntitiesData }: LinkAnalysisG
   const { fitView, zoomIn, zoomOut } = useReactFlow();
 
   useEffect(() => {
+    console.log("LinkAnalysisGraph: identifiedEntitiesData", identifiedEntitiesData);
+    console.log("LinkAnalysisGraph: relationshipsData", relationshipsData);
+
     if (!identifiedEntitiesData || !relationshipsData) {
       setNodes([]);
       setEdges([]);
@@ -163,9 +166,19 @@ function InnerGraph({ relationshipsData, identifiedEntitiesData }: LinkAnalysisG
     }));
 
     const generatedEdges: Edge<EdgeData>[] = relationshipsData
-    .filter(rel => rel.source && rel.target && generatedNodes.some(n => n.id === rel.source) && generatedNodes.some(n => n.id === rel.target))
+    .filter(rel => {
+        const sourceExists = generatedNodes.some(n => n.id === rel.source);
+        const targetExists = generatedNodes.some(n => n.id === rel.target);
+        if (!sourceExists) {
+            console.warn(`[GraphComponent] Edge filtered out: Source node ID '${rel.source}' for relation '${rel.label}' not found in generatedNodes.`);
+        }
+        if (!targetExists) {
+            console.warn(`[GraphComponent] Edge filtered out: Target node ID '${rel.target}' for relation '${rel.label}' not found in generatedNodes.`);
+        }
+        return rel.source && rel.target && sourceExists && targetExists;
+    })
     .map((rel, index) => ({
-      id: `edge-${rel.source}-${rel.target}-${index}-${rel.label.replace(/[^a-zA-Z0-9]/g, '')}`,
+      id: `edge-${index}-${rel.source}-${rel.target}`, // Simplified ID
       source: rel.source,
       target: rel.target,
       label: rel.label,
@@ -196,6 +209,9 @@ function InnerGraph({ relationshipsData, identifiedEntitiesData }: LinkAnalysisG
         direction: rel.direction
       }
     }));
+    
+    console.log("LinkAnalysisGraph: generatedNodes", generatedNodes);
+    console.log("LinkAnalysisGraph: generatedEdges (after filtering and mapping)", generatedEdges);
 
     if (generatedNodes.length > 0) {
         const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(generatedNodes, generatedEdges, 'TB');
@@ -312,3 +328,4 @@ export default function LinkAnalysisGraphWrapper(props: LinkAnalysisGraphProps) 
     </ReactFlowProvider>
   );
 }
+

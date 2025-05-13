@@ -26,7 +26,14 @@ export type AnalyzeImageInput = z.infer<typeof AnalyzeImageInputSchema>;
 const FacialRecognitionDetailSchema = z.object({
   boundingBox: z.array(z.number()).optional().describe('Caixa delimitadora da face detectada (ex: [x, y, largura, altura]).'),
   confidence: z.number().optional().describe('Confiança da detecção da face (0 a 1).'),
-  attributesDescription: z.string().optional().describe('Descrição textual dos atributos gerais da face (ex: "possui óculos, aparenta estar sorrindo"), se detectados.')
+  attributesDescription: z.string().optional().describe('Descrição textual dos atributos gerais da face (ex: "possui óculos, aparenta estar sorrindo"), se detectados.'),
+  estimatedAge: z.string().optional().describe('Estimativa da faixa etária da face detectada (ex: "25-35 anos", "criança", "idoso"). Se não puder estimar, indicar "Não estimável".')
+});
+
+const VehicleDetailSchema = z.object({
+  make: z.string().optional().describe('Marca do veículo detectado (ex: Ford, Chevrolet).'),
+  model: z.string().optional().describe('Modelo do veículo detectado (ex: Fiesta, Onix).'),
+  confidence: z.number().optional().describe('Confiança da detecção do veículo (0 a 1).')
 });
 
 const AnalyzeImageOutputSchema = z.object({
@@ -36,7 +43,8 @@ const AnalyzeImageOutputSchema = z.object({
   facialRecognition: z.object({
     facesDetected: z.number().int().nonnegative().describe('Número de faces humanas detectadas na imagem.'),
     details: z.array(FacialRecognitionDetailSchema).optional().describe('Detalhes sobre cada face detectada, se a IA puder fornecer (sem identificação pessoal).')
-  }).optional().describe('Resultados da detecção facial. Não realiza identificação pessoal.')
+  }).optional().describe('Resultados da detecção facial. Não realiza identificação pessoal.'),
+  vehicleDetails: z.array(VehicleDetailSchema).optional().describe('Lista de veículos detectados com suas possíveis marcas e modelos.')
 });
 
 export type AnalyzeImageOutput = z.infer<typeof AnalyzeImageOutputSchema>;
@@ -69,7 +77,7 @@ const analyzeImagePrompt = ai.definePrompt({
   name: 'analyzeImagePrompt',
   input: {schema: AnalyzeImageInputSchema},
   output: {schema: AnalyzeImageOutputSchema},
-  prompt: `Você é um especialista em análise forense de imagens. Seu trabalho é analisar uma imagem e extrair dados relevantes, gerar uma descrição detalhada, sugerir melhorias (e listar as aplicadas por você, se houver) e detectar faces.
+  prompt: `Você é um especialista em análise forense de imagens. Seu trabalho é analisar uma imagem e extrair dados relevantes, gerar uma descrição detalhada, sugerir melhorias (e listar as aplicadas por você, se houver), detectar faces e identificar veículos.
 
   Analise a seguinte imagem:
   {{media url=photoDataUri}}
@@ -82,8 +90,13 @@ const analyzeImagePrompt = ai.definePrompt({
       *   Se, para realizar sua análise, você implicitamente aplicou alguma técnica de melhoramento (ex: aumento de nitidez para ler um texto), mencione quais foram.
   4.  **Detecção Facial**:
       *   Indique o número de faces humanas claramente visíveis na imagem. Se nenhuma face for detectada, retorne 0.
-      *   Se faces forem detectadas, e se a IA puder fornecer, descreva características gerais para cada uma (sem fazer identificação pessoal), como a presença de óculos, barba, chapéu, ou a direção do olhar, se discernível, no campo 'attributesDescription'. Não tente adivinhar identidade, idade exata ou etnia. Apenas características observáveis. Forneça a caixa delimitadora (bounding box) e confiança se possível.
+      *   Se faces forem detectadas, e se a IA puder fornecer, descreva características gerais para cada uma (sem fazer identificação pessoal), como a presença de óculos, barba, chapéu, ou a direção do olhar, se discernível, no campo 'attributesDescription'.
+      *   **Estimativa de Idade**: Para cada face detectada, forneça uma estimativa da faixa etária (ex: "25-35 anos", "criança", "idoso", "adulto jovem", "meia-idade"). Se não for possível estimar com razoável confiança, preencha o campo 'estimatedAge' com "Não estimável".
+      *   Forneça a caixa delimitadora (bounding box) e confiança se possível.
       *   Se a IA não puder fornecer detalhes faciais mesmo detectando faces, indique isso.
+  5.  **Identificação de Veículos**:
+      *   Se veículos forem visíveis na imagem, tente identificar a marca (ex: Ford, Volkswagen, Fiat) e o modelo (ex: Fiesta, Gol, Palio) de cada um.
+      *   Para cada veículo identificado, preencha os campos 'make', 'model' e 'confidence' (0 a 1) no array 'vehicleDetails'. Se não for possível determinar a marca ou modelo, deixe os campos correspondentes vazios ou indique "Desconhecido(a)". Se nenhum veículo for detectado, o array 'vehicleDetails' deve ser vazio.
 
   Seja objetivo e forneça informações factuais baseadas na imagem. Certifique-se de preencher todos os campos do schema de saída, mesmo que com valores indicando ausência de informação (ex: "Nenhuma placa detectada", lista vazia para sugestões, 0 para faces).
 `,
@@ -111,5 +124,6 @@ const analyzeImageFlow = ai.defineFlow(
     return output;
   }
 );
+
 
 

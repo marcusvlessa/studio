@@ -11,13 +11,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { FileImage, Search, RotateCcw, Loader2, Sparkles, Smile, FolderKanban, Info } from "lucide-react"; 
+import { FileImage, Search, RotateCcw, Loader2, Sparkles, Smile, FolderKanban, Info, Car } from "lucide-react"; 
 import { useToast } from "@/hooks/use-toast";
 import { analyzeImage, type AnalyzeImageInput, type AnalyzeImageOutput } from "@/ai/flows/analyze-image";
 import Image from "next/image"; 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Alert as ShadAlert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import type { ImageCaseAnalysis } from "@/types/case";
+import { Badge } from "@/components/ui/badge";
 
 const MAX_FILE_SIZE_MB = 4;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
@@ -263,6 +264,30 @@ function ImageAnalysisContent() {
                  <p className="text-sm text-muted-foreground">Nenhuma placa de veículo detectada com confiança.</p>
             )}
 
+            {analysisResult.vehicleDetails && analysisResult.vehicleDetails.length > 0 && (
+              <div>
+                <h3 className="text-md font-semibold mb-2 flex items-center"><Car className="mr-2 h-5 w-5 text-primary"/> Detalhes de Veículos Detectados</h3>
+                 <Accordion type="single" collapsible className="w-full">
+                    <AccordionItem value="vehicle-details">
+                    <AccordionTrigger className="text-sm py-2">Ver Detalhes dos Veículos ({analysisResult.vehicleDetails.length})</AccordionTrigger>
+                    <AccordionContent>
+                        <ul className="list-disc list-inside space-y-2 text-sm pl-2">
+                            {analysisResult.vehicleDetails.map((vehicle, index) => (
+                                <li key={index} className="p-2 border rounded-md bg-muted/20">
+                                    <strong>Veículo {index + 1}:</strong>
+                                    {vehicle.make && ` Marca: ${vehicle.make}.`}
+                                    {vehicle.model && ` Modelo: ${vehicle.model}.`}
+                                    {vehicle.confidence !== undefined && ` Confiança: ${(vehicle.confidence * 100).toFixed(0)}%.`}
+                                    {(!vehicle.make && !vehicle.model && vehicle.confidence === undefined) && " Sem detalhes adicionais."}
+                                </li>
+                            ))}
+                        </ul>
+                    </AccordionContent>
+                    </AccordionItem>
+                </Accordion>
+              </div>
+            )}
+
             {analysisResult.enhancementSuggestions && analysisResult.enhancementSuggestions.length > 0 && (
                 <div>
                     <h3 className="text-md font-semibold mb-2 flex items-center"><Sparkles className="mr-2 h-5 w-5 text-primary"/> Sugestões de Melhoramento de Imagem</h3>
@@ -284,14 +309,15 @@ function ImageAnalysisContent() {
                                 <AccordionItem value="face-details">
                                 <AccordionTrigger className="text-sm py-2">Ver Detalhes das Faces</AccordionTrigger>
                                 <AccordionContent>
-                                    <ul className="list-disc list-inside space-y-1 text-sm pl-2">
+                                    <ul className="list-disc list-inside space-y-2 text-sm pl-2">
                                     {analysisResult.facialRecognition.details.map((detail, index) => (
-                                        <li key={index}>
-                                            Face {index + 1}: 
-                                            {detail.confidence && ` Confiança: ${(detail.confidence * 100).toFixed(0)}%.`}
+                                        <li key={index} className="p-2 border rounded-md bg-muted/20">
+                                            <strong>Face {index + 1}:</strong> 
+                                            {detail.estimatedAge && ` Idade Estimada: ${detail.estimatedAge}.`}
                                             {detail.attributesDescription && ` Atributos: ${detail.attributesDescription}.`}
+                                            {detail.confidence !== undefined && ` Confiança: ${(detail.confidence * 100).toFixed(0)}%.`}
                                             {detail.boundingBox && ` Posição: [${detail.boundingBox.join(', ')}].`}
-                                            {(!detail.confidence && !detail.attributesDescription && !detail.boundingBox) && " Sem detalhes adicionais."}
+                                            {(!detail.estimatedAge && !detail.attributesDescription && detail.confidence === undefined && !detail.boundingBox) && " Sem detalhes adicionais."}
                                         </li>
                                     ))}
                                     </ul>
@@ -318,3 +344,4 @@ export default function ImageAnalysisPage() {
     </Suspense>
   )
 }
+

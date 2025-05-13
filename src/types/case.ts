@@ -5,28 +5,29 @@ import type { TranscribeAudioOutput } from "@/ai/flows/transcribe-audio";
 import type { ConsolidateAudioAnalysesOutput } from "@/ai/flows/consolidate-audio-analyses-flow";
 import type { AnalyzeImageOutput } from "@/ai/flows/analyze-image";
 import type { FindEntityRelationshipsOutput } from "@/ai/flows/find-entity-relationships";
-import type { ClassifyTextForCrimesOutput } from "@/ai/flows/classify-text-for-crimes-flow"; // Added for clarity
+import type { AnalyzeFinancialDataOutput } from "@/ai/flows/analyze-financial-data-flow";
+import type { ClassifyTextForCrimesOutput } from "@/ai/flows/classify-text-for-crimes-flow"; 
 
 interface BaseAnalysis {
   id: string;
   analysisDate: string;
   originalFileName?: string;
-  summary: string; // A concise summary/title for the analysis item
+  summary: string; 
 }
 
 export interface DocumentCaseAnalysis extends BaseAnalysis {
   type: "Documento";
-  data: AnalyzeDocumentOutput; // This now includes crimeAnalysisResults: ClassifyTextForCrimesOutput
+  data: AnalyzeDocumentOutput; 
 }
 
 export interface AudioCaseAnalysis extends BaseAnalysis {
   type: "Áudio";
-  data: TranscribeAudioOutput & { crimeAnalysisResults?: ClassifyTextForCrimesOutput }; // Anticipating adding crime analysis here too
+  data: TranscribeAudioOutput & { crimeAnalysisResults?: ClassifyTextForCrimesOutput }; 
 }
 
 export interface AudioConsolidatedCaseAnalysis extends BaseAnalysis {
   type: "Áudio Consolidado";
-  data: ConsolidateAudioAnalysesOutput; // May also include aggregated crime tags later
+  data: ConsolidateAudioAnalysesOutput; 
 }
 
 export interface ImageCaseAnalysis extends BaseAnalysis {
@@ -39,12 +40,19 @@ export interface LinkCaseAnalysis extends BaseAnalysis {
   data: FindEntityRelationshipsOutput;
 }
 
+export interface FinancialCaseAnalysis extends BaseAnalysis {
+  type: "Financeiro";
+  data: AnalyzeFinancialDataOutput;
+}
+
+
 export type CaseAnalysis =
   | DocumentCaseAnalysis
   | AudioCaseAnalysis
   | AudioConsolidatedCaseAnalysis
   | ImageCaseAnalysis
-  | LinkCaseAnalysis;
+  | LinkCaseAnalysis
+  | FinancialCaseAnalysis;
 
 export interface Case {
   id: string;
@@ -56,9 +64,13 @@ export interface Case {
   relatedAnalyses: CaseAnalysis[];
 }
 
-// For the dashboard, defining a simple crime tag type if needed for aggregation
 export interface AggregatedCrimeTag {
   crimeType: string;
   count: number;
-  fill: string; // For chart coloring
+  fill: string; 
+}
+
+// Define an API key storage type
+export interface ApiKeyStore {
+  googleApiKey?: string;
 }

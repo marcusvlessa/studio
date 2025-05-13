@@ -1,9 +1,9 @@
 
 'use server';
 /**
- * @fileOverview Fluxo de IA para análise de documentos, atuando como Investigador, Escrivão e Delegado.
+ * @fileOverview Fluxo de IA para análise de documentos, atuando como Investigador, Escrivão e Delegado, e gerando um press release.
  *
- * - analyzeDocument - Analisa um documento para extrair conteúdo, resumir, identificar entidades, classificar crimes e fornecer análises investigativas.
+ * - analyzeDocument - Analisa um documento para extrair conteúdo, resumir, identificar entidades, classificar crimes, fornecer análises investigativas e gerar um press release.
  * - AnalyzeDocumentInput - O tipo de entrada para a função analyzeDocument.
  * - AnalyzeDocumentOutput - O tipo de retorno para a função analyzeDocument.
  */
@@ -53,7 +53,6 @@ const DelegateAssessmentSchema = z.object({
   legalConsiderations: z.string().optional().describe("Considerações legales preliminares, possíveis enquadramentos típicos (tipificação penal), ou implicações jurídicas com base nas informações disponíveis no documento."),
 });
 
-// Re-importing schema from classify-text-for-crimes-flow to avoid circular dependencies if it were in a shared types file
 const CrimeTagFromFlowSchema = z.object({
   crimeType: z.string(),
   description: z.string(),
@@ -77,6 +76,7 @@ const AnalyzeDocumentOutputSchema = z.object({
   clerkReport: ClerkReportSchema.optional().describe("Relatório estruturado e formalizado sob a perspectiva de um Escrivão de Polícia."),
   delegateAssessment: DelegateAssessmentSchema.optional().describe("Avaliação, direcionamento e sugestões de próximos passos sob a perspectiva de um Delegado de Polícia."),
   crimeAnalysisResults: CrimeAnalysisResultsSchema.optional().describe("Resultados da classificação de crimes identificados no texto do documento."),
+  pressRelease: z.string().optional().describe("Press release para envio à imprensa, formatado como um assessor de imprensa da Polícia Civil da Bahia (PCBA). Se as informações não forem adequadas para um release ou forem muito sensíveis para divulgação pública, deve ser 'Informações não apropriadas ou insuficientes para um press release neste momento.'."),
 });
 export type AnalyzeDocumentOutput = z.infer<typeof AnalyzeDocumentOutputSchema>;
 
@@ -102,8 +102,10 @@ export async function analyzeDocument(input: AnalyzeDocumentInput): Promise<Anal
     let effectiveMimeTypeForCheck = originalMimeType ? originalMimeType.toLowerCase() : null;
     const isPdfByExtension = fileName.toLowerCase().endsWith('.pdf');
 
+    // Corrigir MIME type para application/octet-stream se for PDF por extensão
     if (isPdfByExtension && (effectiveMimeTypeForCheck === 'application/octet-stream' || !effectiveMimeTypeForCheck)) {
       effectiveMimeTypeForCheck = 'application/pdf';
+      // Reconstruir Data URI se necessário para garantir 'application/pdf'
       if (input.fileDataUri.includes(',')) {
         const base64Content = input.fileDataUri.substring(input.fileDataUri.indexOf(',') + 1);
         processedFileDataUri = `data:application/pdf;base64,${base64Content}`;
@@ -141,14 +143,14 @@ const analyzeDocumentPrompt = ai.definePrompt({
   name: 'analyzeDocumentPrompt',
   input: {schema: AnalyzeDocumentInputSchema},
   output: {schema: AnalyzeDocumentOutputSchema.omit({ crimeAnalysisResults: true })}, // Crime analysis is a separate step
-  prompt: `Você é uma Inteligência Artificial Policial Multifacetada, capaz de atuar em três papéis distintos e sequenciais para analisar um documento: Investigador de Polícia, Escrivão de Polícia e Delegado de Polícia.
+  prompt: `Você é uma Inteligência Artificial Policial Multifacetada, capaz de atuar em quatro papéis distintos e sequenciais para analisar um documento: Investigador de Polícia, Escrivão de Polícia, Delegado de Polícia e Assessor de Imprensa da Polícia Civil da Bahia (PCBA).
 
 {{#if isMediaInput}}
 **Análise de Arquivo (Imagem ou PDF Processável Diretamente):**
 Documento para análise ({{#if fileName}}Nome: {{fileName}}{{else}}Sem nome{{/if}}):
 {{media url=fileDataUri}}
 
-Instruções para IA com Arquivo Processável Diretamente: O documento acima é um arquivo (imagem ou PDF) cujo conteúdo a IA pode processar diretamente. Prossiga com as Fases 1, 2 e 3.
+Instruções para IA com Arquivo Processável Diretamente: O documento acima é um arquivo (imagem ou PDF) cujo conteúdo a IA pode processar diretamente. Prossiga com as Fases 1, 2, 3 e 4.
 Na Fase 2 (Escrivão):
 -   **Extração de Texto Completo**: Se o documento for uma imagem ou PDF baseado em imagem, aplique OCR para extrair todo o texto. Se for um PDF textual, extraia o texto diretamente. Coloque este texto no campo 'extractedText'. Se a extração não for possível ou o documento não contiver texto (ex: foto de uma paisagem sem texto), indique isso claramente no campo 'extractedText' (ex: "Não foi possível extrair texto" ou "Documento é uma imagem sem conteúdo textual").
 -   **Identificação de Idioma**: Identifique o idioma principal do texto extraído e retorne seu código ISO 639-1 no campo 'language'.
@@ -171,16 +173,16 @@ O 'Conteúdo para Análise' acima pode ser:
    -   O campo 'language' DEVE ser "N/A".
    -   O campo 'summary' DEVE ser um resumo da situação: "Impossibilidade de análise direta do conteúdo do arquivo. Análise baseada em metadados como nome do arquivo e tipo MIME."
    -   O campo 'keyEntities' DEVE conter entidades extraídas do nome do arquivo (ex: {{fileName}}) e do tipo MIME informado na mensagem do sistema. Tipos de entidade podem ser "Nome de Arquivo", "Tipo MIME".
-   -   As Fases 1, 2 e 3 devem focar na interpretação do nome do arquivo, tipo MIME e na implicação de tal arquivo existir no contexto de uma investigação.
+   -   As Fases 1, 2, 3 e 4 devem focar na interpretação do nome do arquivo, tipo MIME e na implicação de tal arquivo existir no contexto de uma investigação. O 'pressRelease' (Fase 4) provavelmente será "Informações não apropriadas ou insuficientes para um press release neste momento."
 
 Para texto extraído diretamente (não "AVISO DO SISTEMA"):
 -   O campo 'extractedText' DEVE ser o 'Conteúdo para Análise'.
 -   Detecte 'language'.
 -   Gere 'summary' e 'keyEntities' a partir do texto.
--   Prossiga com as Fases 1, 2 e 3 aplicadas ao texto.
+-   Prossiga com as Fases 1, 2, 3 e 4 aplicadas ao texto.
 {{else}}
 **Erro: Nenhum conteúdo ou arquivo válido fornecido para análise.**
-Instruções para a IA: Preencha a resposta indicando que não foi fornecido conteúdo válido. Por exemplo, no campo 'summary', coloque "Nenhum dado de entrada válido para análise.". Deixe outros campos como 'extractedText', 'keyEntities' e as análises das Fases 1, 2 e 3 com indicações de ausência de dados ou observações.
+Instruções para a IA: Preencha a resposta indicando que não foi fornecido conteúdo válido. Por exemplo, no campo 'summary', coloque "Nenhum dado de entrada válido para análise.". Deixe outros campos como 'extractedText', 'keyEntities' e as análises das Fases 1, 2, 3 e 4 com indicações de ausência de dados ou observações. O 'pressRelease' deve ser "Informações não apropriadas ou insuficientes para um press release neste momento.".
 {{/if}}
 
 Siga rigorosamente as fases e instruções abaixo, aplicando-as ao conteúdo disponível (seja ele texto extraído de 'fileDataUri', 'Conteúdo para Análise', ou metadados de um arquivo não processável):
@@ -202,6 +204,20 @@ Como Delegado, com base nas análises e extrações das fases anteriores, forne�
 -   **Ações Sugeridas pelo Delegado**: Com base na sua avaliação, liste as próximas diligências investigativas, providências ou ações que você, como autoridade policial, recomendaria (ex: "Instaurar Inquérito Policial", "Registrar Boletim de Ocorrência", "Ouvir formalmente as partes mencionadas", "Solicitar imagens de câmeras de segurança", "Realizar busca e apreensão mediante autorização judicial", "Requisitar perícia no material X", "Verificar antecedentes criminais dos envolvidos", "Encaminhar para mediação/delegacia especializada"). Coloque no campo 'delegateAssessment.suggestedActions'.
 -   **Considerações Legais Preliminares do Delegado**: Mencione, if possível, considerações legales preliminares, como possíveis enquadramentos penais (tipificações criminais) que podem estar relacionados aos fatos, ou outras implicações jurídicas relevantes. (Ex: "Os fatos, em tese, podem configurar o crime de Estelionato (Art. 171, CP)", "Necessário apurar possível crime de Ameaça (Art. 147, CP)", "Verificar se há incidência da Lei Maria da Penha"). Coloque no campo 'delegateAssessment.legalConsiderations'.
 
+**Fase 4: Comunicação à Imprensa (Perspectiva: Assessor de Imprensa da PCBA)**
+Com base nas análises anteriores, especialmente na avaliação do Delegado e na natureza dos fatos apurados, redija um 'pressRelease'.
+-   **Conteúdo do Press Release**: O release deve ser informativo, objetivo e adequado para divulgação pública. Deve incluir:
+    *   Título chamativo e informativo.
+    *   Data e local (Salvador, BA).
+    *   Resumo do caso/operação (o que pode ser divulgado publicamente sem comprometer a investigação).
+    *   Principais ações realizadas pela Polícia Civil da Bahia (PCBA).
+    *   Resultados alcançados (prisões, apreensões, etc.), se houver e puderem ser divulgados.
+    *   Importância da ação para a segurança pública.
+    *   Citação (simulada) de uma autoridade policial (Delegado(a) responsável, Diretor(a) de departamento, etc.), se pertinente.
+    *   Informações de contato para a imprensa (simuladas, ex: "Assessoria de Comunicação da PCBA - ascom@pc.ba.gov.br").
+-   **Tom e Estilo**: Linguagem clara, concisa, e imparcial. Evitar jargões excessivos. Foco nos fatos e na atuação da PCBA.
+-   **Sensibilidade**: Se as informações forem muito sensíveis, em fase inicial de investigação, ou não houver nada de relevância pública imediata, o campo 'pressRelease' deve ser preenchido com: "Informações não apropriadas ou insuficientes para um press release neste momento.".
+
 Certifique-se de que a saída JSON esteja completa e siga o schema definido, especialmente para a Fase 1 (Análise Investigativa) que é obrigatória. Se alguma informação específica não puder ser extraída ou inferida para campos opcionais, deixe o campo correspondente vazio ou omita-o, mas tente ser o mais completo possível.
 O campo 'crimeAnalysisResults' será preenchido em uma etapa separada pelo sistema, não precisa se preocupar com ele neste prompt.
 `,
@@ -211,14 +227,14 @@ const analyzeDocumentFlowInternal = ai.defineFlow(
   {
     name: 'analyzeDocumentFlowInternal',
     inputSchema: AnalyzeDocumentInputSchema, 
-    outputSchema: AnalyzeDocumentOutputSchema, // Now includes crimeAnalysisResults
+    outputSchema: AnalyzeDocumentOutputSchema, 
   },
   async (rawInput: AnalyzeDocumentInput): Promise<AnalyzeDocumentOutput> => { 
     const promptInput = {...rawInput};
 
-    if (promptInput.fileDataUri && !promptInput.textContent) { // Path for directly processable media
+    if (promptInput.fileDataUri && !promptInput.textContent) { 
         promptInput.isMediaInput = true;
-    } else { // Path for textContent (original text or system message for unprocessable files)
+    } else { 
         promptInput.isMediaInput = false;
         if (promptInput.textContent) {
           delete promptInput.fileDataUri;
@@ -230,7 +246,6 @@ const analyzeDocumentFlowInternal = ai.defineFlow(
       throw new Error("A análise do documento não retornou um resultado válido.");
     }
     
-    // Ensure investigatorAnalysis is always present as it's marked mandatory in the prompt logic
     if (!mainAnalysisOutput.investigatorAnalysis) {
         mainAnalysisOutput.investigatorAnalysis = {
             observations: "Nenhuma observação investigativa retornada pela IA.",
@@ -245,8 +260,12 @@ const analyzeDocumentFlowInternal = ai.defineFlow(
         }
     }
 
+    if (mainAnalysisOutput.pressRelease === undefined || mainAnalysisOutput.pressRelease === null || mainAnalysisOutput.pressRelease.trim() === "") {
+        mainAnalysisOutput.pressRelease = "Informações não apropriadas ou insuficientes para um press release neste momento.";
+    }
+
+
     let crimeAnalysisResults: ClassifyTextForCrimesOutput | undefined = undefined;
-    // Only run crime classification if there's actual extracted text and it's not a system warning.
     if (mainAnalysisOutput.extractedText && !mainAnalysisOutput.extractedText.startsWith("AVISO DO SISTEMA:") && mainAnalysisOutput.extractedText.trim() !== "Não foi possível extrair texto" && mainAnalysisOutput.extractedText.trim() !== "Documento é uma imagem sem conteúdo textual") {
       try {
         const crimeInput: ClassifyTextForCrimesInput = {
@@ -256,7 +275,6 @@ const analyzeDocumentFlowInternal = ai.defineFlow(
         crimeAnalysisResults = await classifyTextForCrimes(crimeInput);
       } catch (crimeError) {
         console.error("Erro na classificação de crimes:", crimeError);
-        // Optionally, populate crimeAnalysisResults with an error state or default
         crimeAnalysisResults = {
           crimeTags: [],
           overallCriminalAssessment: "Falha ao realizar a classificação de crimes no texto do documento."
@@ -277,3 +295,4 @@ const analyzeDocumentFlowInternal = ai.defineFlow(
 );
 
     
+

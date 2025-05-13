@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { FileUp, RotateCcw, Search, Loader2, FileTextIcon, CheckCircle, AlertCircle, Info, UserCheck, FileSignature, Gavel, ListChecks, AlertTriangle, BookOpen, Scale, FolderKanban, ShieldCheck } from "lucide-react";
+import { FileUp, RotateCcw, Search, Loader2, FileTextIcon, CheckCircle, AlertCircle, Info, UserCheck, FileSignature, Gavel, ListChecks, AlertTriangle, BookOpen, Scale, FolderKanban, ShieldCheck, Newspaper } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { analyzeDocument, type AnalyzeDocumentInput, type AnalyzeDocumentOutput } from "@/ai/flows/analyze-document-flow";
 import { Badge } from "@/components/ui/badge";
@@ -348,7 +348,7 @@ function DocumentAnalysisContent() {
                 </Card>
             )}
             
-            <Accordion type="multiple" className="w-full space-y-4" defaultValue={["investigator-analysis", "clerk-report", "delegate-assessment"]}>
+            <Accordion type="multiple" className="w-full space-y-4" defaultValue={["investigator-analysis", "clerk-report", "delegate-assessment", "press-release"]}>
                 {analysisResult.investigatorAnalysis && (
                     <AccordionItem value="investigator-analysis" className="border rounded-lg bg-card shadow-sm">
                         <AccordionTrigger className="p-4 text-lg font-semibold hover:no-underline">
@@ -433,6 +433,17 @@ function DocumentAnalysisContent() {
                         </AccordionContent>
                     </AccordionItem>
                 )}
+
+                 {analysisResult.pressRelease && (
+                    <AccordionItem value="press-release" className="border rounded-lg bg-card shadow-sm">
+                        <AccordionTrigger className="p-4 text-lg font-semibold hover:no-underline">
+                            <div className="flex items-center gap-2"><Newspaper className="h-6 w-6 text-purple-600" /> Press Release (Assessor de Imprensa PCBA)</div>
+                        </AccordionTrigger>
+                        <AccordionContent className="p-4 pt-0">
+                            <Textarea value={analysisResult.pressRelease} readOnly rows={10} className="bg-muted/50 mt-1" />
+                        </AccordionContent>
+                    </AccordionItem>
+                )}
             </Accordion>
 
             {analysisResult.extractedText && (
@@ -472,4 +483,5 @@ export default function DocumentAnalysisPage() {
     </Suspense>
   );
 }
+
 

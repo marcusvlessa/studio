@@ -1,7 +1,7 @@
 
 "use client";
 
-import * as React from "react"; // Import React
+import * as React from "react"; 
 import type { Edge, Node, NodeProps } from "reactflow";
 import ReactFlow, {
   Controls,
@@ -19,14 +19,15 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { LayoutGrid, Share2, ZoomIn, ZoomOut, Download } from "lucide-react";
 
-// Dagre is a popular layouting library
 import dagre from 'dagre';
+import type { IdentifiedEntity, Relationship } from "@/ai/flows/find-entity-relationships"; // Assuming these types are exported
+
 
 interface CustomNodeData {
-  label: string; // Entity name
-  type?: string;  // Entity type
+  label: string; 
+  type?: string;  
   isHighlighted?: boolean;
-  properties?: Record<string, any>;
+  properties?: Record<string, string>; // Changed from any to string based on AI flow update
 }
 
 
@@ -58,13 +59,14 @@ const CustomNodeComponent = React.memo(({ data, selected }: NodeProps<CustomNode
     <div style={nodeStyle}>
       <div style={{ fontWeight: 'bold', marginBottom: '2px' }}>{data.label}</div>
       {data.type && <div style={typeStyle}>({data.type})</div>}
-      {/* Simple display for properties - can be expanded */}
-      {/* {data.properties && Object.keys(data.properties).length > 0 && (
+      {data.properties && Object.keys(data.properties).length > 0 && (
         <div style={{...typeStyle, marginTop: '4px', fontSize: '9px', textAlign: 'left'}}>
           {Object.entries(data.properties).slice(0,2).map(([key, value]) => (
-            <div key={key} style={{whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}} title={`${key}: ${value}`}>{`${key.substring(0,10)}: ${String(value).substring(0,15)}...`}</div>
-          ))}</div>
-      )} */}
+            <div key={key} style={{whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}} title={`${key}: ${String(value)}`}>{`${key.substring(0,10)}: ${String(value).substring(0,15)}...`}</div>
+          ))}
+           {Object.keys(data.properties).length > 2 && <div>...</div>}
+        </div>
+      )}
     </div>
   );
 });
@@ -76,15 +78,15 @@ const customNodeTypes = {
 };
 
 interface LinkAnalysisGraphProps {
-    relationshipsData: FindEntityRelationshipsOutput['relationships'];
-    identifiedEntitiesData: FindEntityRelationshipsOutput['identifiedEntities'];
+    relationshipsData: Relationship[]; // Use specific type from AI flow
+    identifiedEntitiesData: IdentifiedEntity[]; // Use specific type from AI flow
 }
 
 interface EdgeData {
   label: string;
   type?: string;
   strength?: number;
-  properties?: Record<string, any>;
+  properties?: Record<string, string>; // Changed to string
   direction?: "direcional" | "bidirecional" | "nao_direcional";
 }
 
@@ -93,10 +95,10 @@ dagreGraph.setDefaultEdgeLabel(() => ({}));
 
 const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = 'TB') => {
   const isHorizontal = direction === 'LR';
-  dagreGraph.setGraph({ rankdir: direction, nodesep: 100, ranksep: 100 }); // nodesep for horizontal, ranksep for vertical
+  dagreGraph.setGraph({ rankdir: direction, nodesep: 100, ranksep: 100 }); 
 
   nodes.forEach((node) => {
-    dagreGraph.setNode(node.id, { width: 180, height: 70 }); // Approximate node dimensions
+    dagreGraph.setNode(node.id, { width: 180, height: 70 + (node.data.properties && Object.keys(node.data.properties).length > 0 ? 20 * Math.min(2, Object.keys(node.data.properties).length) : 0) }); 
   });
 
   edges.forEach((edge) => {
@@ -109,7 +111,7 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = 'TB') => 
     const nodeWithPosition = dagreGraph.node(node.id);
     node.targetPosition = isHorizontal ? 'left' : 'top';
     node.sourcePosition = isHorizontal ? 'right' : 'bottom';
-    node.position = { x: nodeWithPosition.x, y: nodeWithPosition.y };
+    node.position = { x: nodeWithPosition.x - (180/2), y: nodeWithPosition.y - ( (70 + (node.data.properties && Object.keys(node.data.properties).length > 0 ? 20 * Math.min(2, Object.keys(node.data.properties).length) : 0))/2 ) };
   });
 
   return { nodes: [...nodes], edges: [...edges] };
@@ -119,7 +121,7 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = 'TB') => 
 export function LinkAnalysisGraph({ relationshipsData, identifiedEntitiesData }: LinkAnalysisGraphProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<CustomNodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<EdgeData>([]);
-   const reactFlowInstance = useRef<any>(null);
+  const reactFlowInstance = useRef<any>(null);
 
 
   useEffect(() => {
@@ -130,47 +132,47 @@ export function LinkAnalysisGraph({ relationshipsData, identifiedEntitiesData }:
     }
 
     const generatedNodes: Node<CustomNodeData>[] = identifiedEntitiesData.map(entity => ({
-      id: entity.id, // Use the AI-provided unique ID
+      id: entity.id, 
       type: 'custom',
       data: { 
         label: entity.label, 
         type: entity.type,
-        properties: entity.properties 
+        properties: typeof entity.properties === 'object' && entity.properties !== null ? entity.properties : {}
       },
-      position: { x: Math.random() * 400, y: Math.random() * 400 }, // Initial random position
+      position: { x: Math.random() * 400, y: Math.random() * 400 }, 
     }));
 
     const generatedEdges: Edge<EdgeData>[] = relationshipsData
-    .filter(rel => rel.source && rel.target && generatedNodes.find(n => n.id === rel.source) && generatedNodes.find(n => n.id === rel.target)) // Ensure source and target nodes exist
+    .filter(rel => rel.source && rel.target && generatedNodes.find(n => n.id === rel.source) && generatedNodes.find(n => n.id === rel.target)) 
     .map((rel, index) => ({
-      id: `edge-${rel.source}-${rel.target}-${index}`, // More robust edge ID
+      id: `edge-${rel.source}-${rel.target}-${index}-${rel.label.replace(/[^a-zA-Z0-9]/g, '')}`, 
       source: rel.source,
       target: rel.target,
       label: rel.label,
-      type: 'smoothstep', // Or 'default', 'straight', 'step'
-      animated: rel.strength && rel.strength > 0.7,
+      type: 'smoothstep', 
+      animated: rel.strength !== undefined && rel.strength > 0.7,
       markerEnd: rel.direction === "direcional" || rel.direction === "bidirecional" ? {
           type: MarkerType.ArrowClosed,
           width: 15, 
           height: 15, 
           color: 'hsl(var(--primary))',
       } : undefined,
-      markerStart: rel.direction === "bidirecional" ? { // For bidirectional
+      markerStart: rel.direction === "bidirecional" ? { 
           type: MarkerType.ArrowClosed,
           width: 15, 
           height: 15, 
           color: 'hsl(var(--primary))',
       } : undefined,
       style: {
-        strokeWidth: rel.strength ? 1 + (rel.strength * 2) : 1.5, 
-        stroke: rel.strength && rel.strength < 0.5 ? 'hsl(var(--muted-foreground))' : 'hsl(var(--primary))',
-        opacity: rel.strength ? 0.6 + (rel.strength * 0.4) : 0.8,
+        strokeWidth: rel.strength !== undefined ? 1 + (rel.strength * 2) : 1.5, 
+        stroke: rel.strength !== undefined && rel.strength < 0.5 ? 'hsl(var(--muted-foreground))' : 'hsl(var(--primary))',
+        opacity: rel.strength !== undefined ? 0.6 + (rel.strength * 0.4) : 0.8,
       },
       data: {
         label: rel.label,
         type: rel.type,
         strength: rel.strength,
-        properties: rel.properties,
+        properties: typeof rel.properties === 'object' && rel.properties !== null ? rel.properties : {},
         direction: rel.direction
       }
     }));
@@ -191,7 +193,6 @@ export function LinkAnalysisGraph({ relationshipsData, identifiedEntitiesData }:
       setNodes([...layoutedNodes]);
       setEdges([...layoutedEdges]);
       
-      // This is a trick to make ReactFlow re-render and fit the view after layout change
       setTimeout(() => {
         if (reactFlowInstance.current) {
           reactFlowInstance.current.fitView({ padding: 0.1, duration: 500 });
@@ -228,7 +229,6 @@ export function LinkAnalysisGraph({ relationshipsData, identifiedEntitiesData }:
                  <Button variant="outline" size="sm" onClick={() => reactFlowInstance.current?.zoomOut({duration:300})} title="Zoom Out">
                     <ZoomOut className="mr-1 h-4 w-4" /> 
                 </Button>
-                {/* Add more layout buttons or controls here if needed */}
             </div>
             <div style={{ height: '700px', width: '100%' }} className="rounded-md border bg-muted/10 shadow-inner">
                  <ReactFlow
@@ -274,3 +274,4 @@ export function LinkAnalysisGraph({ relationshipsData, identifiedEntitiesData }:
     </Card>
   );
 }
+

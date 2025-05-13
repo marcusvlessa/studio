@@ -15,7 +15,7 @@ const EntitySchema = z.object({
   id: z.string().describe('Identificador único para a entidade no grafo.'),
   label: z.string().describe('O valor ou nome da entidade.'),
   type: z.string().describe('O tipo inferido da entidade (ex: Pessoa, Organização, Localização, Telefone, Email, IP, Veículo, Evento, Transação Financeira, Documento, Website, Chave PIX, IMEI, ERB, Conta Bancária).'),
-  properties: z.record(z.any()).optional().describe('Propriedades adicionais da entidade (ex: para Pessoa { "CPF": "XXX.XXX.XXX-XX" }).')
+  properties: z.record(z.string()).optional().describe('Propriedades adicionais da entidade COMO STRINGS (ex: para Pessoa { "CPF": "XXX.XXX.XXX-XX" }). Os valores das propriedades devem ser strings.')
 });
 
 const RelationshipSchema = z.object({
@@ -25,7 +25,7 @@ const RelationshipSchema = z.object({
   type: z.string().optional().describe('Um tipo categorizado de relacionamento (ex: Comunicação, Financeiro, Familiar, Profissional, Geográfico, Técnico).'),
   direction: z.enum(["direcional", "bidirecional", "nao_direcional"]).optional().describe("A direcionalidade do relacionamento. 'direcional' de source para target, 'bidirecional' para ambos, 'nao_direcional' para associação sem direção clara."),
   strength: z.number().min(0).max(1).optional().describe('Força estimada ou confiança do relacionamento (0 a 1), se aplicável.'),
-  properties: z.record(z.any()).optional().describe('Propriedades adicionais do relacionamento (ex: { "data_hora": "DD/MM/AAAA HH:MM", "valor": "R$ XXX,XX" }).')
+  properties: z.record(z.string()).optional().describe('Propriedades adicionais do relacionamento COMO STRINGS (ex: { "data_hora": "DD/MM/AAAA HH:MM", "valor_texto": "R$ XXX,XX" }). Os valores das propriedades devem ser strings.')
 });
 
 const FindEntityRelationshipsInputSchema = z.object({
@@ -86,24 +86,25 @@ const prompt = ai.definePrompt({
     *   Processe a lista de 'Entidades Brutas'. Identifique entidades únicas e significativas.
     *   Para CADA entidade identificada, atribua um 'id' único (sugestão: use o próprio valor da entidade se for único e adequado como ID, ou um prefixo_valor).
     *   Classifique CADA entidade com um 'type' o mais específico possível. Use os seguintes tipos PRIMÁRIOS e refinar se possível:
-        *   **Pessoa:** (Ex: João Silva, Maria Oliveira). Propriedades podem incluir CPF, RG.
-        *   **Organização:** (Ex: Empresa XYZ Ltda, Polícia Civil). Propriedades podem incluir CNPJ.
+        *   **Pessoa:** (Ex: João Silva, Maria Oliveira). Propriedades podem incluir CPF (como string: "XXX.XXX.XXX-XX"), RG.
+        *   **Organização:** (Ex: Empresa XYZ Ltda, Polícia Civil). Propriedades podem incluir CNPJ (como string: "XX.XXX.XXX/XXXX-XX").
         *   **Localização:** (Ex: Rua Principal 123, Porto Alegre, RS; Coordenada -30.0346° S, -51.2177° W).
-        *   **Telefone:** (Ex: (XX) XXXXX-XXXX, +55 XX XXXXX-XXXX). Propriedades podem incluir operadora, tipo (celular, fixo).
+        *   **Telefone:** (Ex: (XX) XXXXX-XXXX, +55 XX XXXXX-XXXX). Propriedades podem incluir operadora (string), tipo (string: celular, fixo).
         *   **Email:** (Ex: usuario@dominio.com).
-        *   **Endereço IP:** (Ex: 192.168.1.1). Propriedades podem incluir geolocalização IP.
-        *   **Veículo:** (Ex: Placa XXX-0000, Chassi YYYYYYY). Propriedades podem incluir marca, modelo, cor.
-        *   **Evento/Incidente:** (Ex: Roubo a Banco na Data X, Homicídio Local Y). Propriedades podem incluir data/hora, tipo de crime. ESTA ENTIDADE PODE SER CRIADA PELA IA para conectar outras entidades.
-        *   **Transação Financeira:** (Ex: Transferência R$1000 de Conta A para Conta B). Propriedades podem incluir valor, data/hora, tipo (TED, PIX), contas de origem/destino. ESTA ENTIDADE PODE SER CRIADA PELA IA.
-        *   **Documento (Referência):** (Ex: Contrato Nº ZZZ, Relatório XXX). Propriedades podem incluir tipo de documento, data. (Não confundir com o arquivo de origem dos dados).
+        *   **Endereço IP:** (Ex: 192.168.1.1). Propriedades podem incluir geolocalização IP (string).
+        *   **Veículo:** (Ex: Placa XXX-0000, Chassi YYYYYYY). Propriedades podem incluir marca (string), modelo (string), cor (string).
+        *   **Evento/Incidente:** (Ex: Roubo a Banco na Data X, Homicídio Local Y). Propriedades podem incluir data/hora (string), tipo de crime (string). ESTA ENTIDADE PODE SER CRIADA PELA IA para conectar outras entidades.
+        *   **Transação Financeira:** (Ex: Transferência R$1000 de Conta A para Conta B). Propriedades podem incluir valor_texto (string: "R$1000,00"), data/hora (string), tipo (string: TED, PIX), contas de origem/destino (strings). ESTA ENTIDADE PODE SER CRIADA PELA IA.
+        *   **Documento (Referência):** (Ex: Contrato Nº ZZZ, Relatório XXX). Propriedades podem incluir tipo de documento (string), data (string). (Não confundir com o arquivo de origem dos dados).
         *   **Website/URL:** (Ex: https://www.exemplo.com).
         *   **Chave PIX:** (Ex: CPF, CNPJ, Email, Telefone, Aleatória associada a uma Pessoa ou Organização).
         *   **IMEI:** (Ex: 35XXXXXXXXXXXXX).
-        *   **ERB (Estação Rádio Base):** (Ex: ERB-12345). Propriedades podem incluir localização.
-        *   **Conta Bancária:** (Ex: Agência 0001 Conta 12345-6). Propriedades podem incluir banco.
+        *   **ERB (Estação Rádio Base):** (Ex: ERB-12345). Propriedades podem incluir localização (string).
+        *   **Conta Bancária:** (Ex: Agência 0001 Conta 12345-6). Propriedades podem incluir banco (string).
         *   **Item/Objeto Físico:** (Ex: Arma de Fogo, Notebook Dell).
         *   **Outros:** Use se nenhuma das anteriores se aplicar, e especifique.
     *   Se uma entidade bruta puder ser decomposta em várias (ex: uma linha de CSV com nome, telefone e CPF), crie entidades separadas para cada um, se fizer sentido para a análise de vínculos.
+    *   Para o campo 'properties' de cada entidade, se houver propriedades, elas DEVEM ser um objeto onde todas as chaves e valores são strings. Exemplo: { "CPF": "123.456.789-00", "RG": "1234567" }. Se não houver propriedades, omita o campo 'properties'. NÃO inclua 'properties: {}'.
 
 2.  **Inferência e Descrição de Relacionamentos (Campo: relationships):**
     *   Identifique relacionamentos diretos e INDIRETOS (se possível, através de entidades intermediárias como Eventos ou Transações) entre as 'identifiedEntities'.
@@ -114,7 +115,7 @@ const prompt = ai.definePrompt({
         *   'type': (Opcional) Categorize o relacionamento (ex: Comunicação, Financeiro, Familiar, Profissional, Propriedade, Localização, Técnico, Participação em Evento).
         *   'direction': (Opcional) "direcional" (ex: Pessoa -> Telefone "possui"), "bidirecional" (ex: Pessoa <-> Pessoa "comunicou com"), "nao_direcional" (ex: Pessoa - Evento "participou de").
         *   'strength': (Opcional) Estime a confiança da IA na existência desse vínculo (0.0 a 1.0).
-        *   'properties': (Opcional) Detalhes adicionais do relacionamento (ex: para "Comunicou com", { "data_hora_inicio": "...", "duracao_segundos": "...", "tipo_chamada": "voz" }).
+        *   'properties': (Opcional) Detalhes adicionais do relacionamento. Se houver propriedades, elas DEVEM ser um objeto onde todas as chaves e valores são strings. Ex: para "Comunicou com", { "data_hora_inicio": "DD/MM/AAAA HH:MM", "duracao_segundos_texto": "120" }. Se não houver propriedades, omita o campo 'properties'. NÃO inclua 'properties: {}'.
 
 3.  **Considerações Específicas do Contexto ({{{analysisContext}}}):**
     *   **Geral:** Ampla gama de entidades e relações.
@@ -127,9 +128,9 @@ const prompt = ai.definePrompt({
 4.  **Criação de Entidades Implícitas:**
     *   Se múltiplas entidades se conectam através de um evento ou transação não explicitamente listado, CRIE uma nova entidade do tipo Evento ou Transação Financeira para representar esse nexo. Ex: Se Pessoa A ligou para Pessoa B (Telefone A para Telefone B), você pode criar uma entidade "Comunicação Telefônica" que liga Telefone A e Telefone B, e então ligar Pessoa A e Pessoa B aos seus respectivos telefones.
 
-5.  **Análise de Vínculos i2 Style:** Pense como se estivesse construindo um gráfico no i2. O objetivo é revelar conexões, mesmo que não óbvias à primeira vista. Se um texto diz "João encontrou Maria no Parque X em 10/10/2023", crie entidades para João (Pessoa), Maria (Pessoa), Parque X (Localização), e um Evento "Encontro João e Maria" (ligando João, Maria, Parque X e com propriedade de data).
+5.  **Análise de Vínculos i2 Style:** Pense como se estivesse construindo um gráfico no i2. O objetivo é revelar conexões, mesmo que não óbvias à primeira vista. Se um texto diz "João encontrou Maria no Parque X em 10/10/2023", crie entidades para João (Pessoa), Maria (Pessoa), Parque X (Localização), e um Evento "Encontro João e Maria" (ligando João, Maria, Parque X e com propriedade de data { "data_encontro_texto": "10/10/2023" }).
 
-6.  **Output (Schema):** Popule rigorosamente os campos 'identifiedEntities' e 'relationships' conforme o schema. Se um relacionamento não for claro, atribua uma 'strength' menor.
+6.  **Output (Schema):** Popule rigorosamente os campos 'identifiedEntities' e 'relationships' conforme o schema. Se um relacionamento não for claro, atribua uma 'strength' menor. Lembre-se: os valores no campo 'properties' devem ser strings.
 
 7.  **Resumo da Análise (analysisSummary):** Forneça um breve resumo textual dos principais achados, complexidades ou limitações da análise.
 
@@ -146,9 +147,7 @@ const findEntityRelationshipsFlow = ai.defineFlow(
   },
   async (input: FindEntityRelationshipsInput) => {
     
-    // Limitar o número de entidades para evitar prompts excessivamente longos ou complexos
-    // que podem degradar a qualidade da resposta ou exceder limites do modelo.
-    const MAX_ENTITIES_TO_PROCESS = 100; // Ajustável
+    const MAX_ENTITIES_TO_PROCESS = 100; 
     let processedEntities = input.entities;
     let analysisSummaryPrefix = "";
 
@@ -171,39 +170,37 @@ const findEntityRelationshipsFlow = ai.defineFlow(
       };
     }
     
-    // Garante que o ID de cada entidade seja único antes de retornar.
-    // Isso é crucial para o ReactFlow.
     const entityIdMap = new Map<string, number>();
     const uniqueIdentifiedEntities = output.identifiedEntities.map(entity => {
-      let newId = entity.label.replace(/[^a-zA-Z0-9_]/g, '_'); // Sanitiza o label para usar como base do ID
+      let newId = entity.label.replace(/[^a-zA-Z0-9_]/g, '_'); 
       if (entityIdMap.has(newId)) {
         entityIdMap.set(newId, entityIdMap.get(newId)! + 1);
         newId = `${newId}_${entityIdMap.get(newId)}`;
       } else {
         entityIdMap.set(newId, 1);
       }
-      return { ...entity, id: newId };
+      // Ensure properties is an object, even if AI omits it or sends null/undefined
+      const validatedProperties = typeof entity.properties === 'object' && entity.properties !== null ? entity.properties : {};
+      return { ...entity, id: newId, properties: validatedProperties };
     });
 
-    // Atualiza os IDs de source e target nos relacionamentos
     const entityLabelToNewIdMap = new Map(uniqueIdentifiedEntities.map(e => [e.label, e.id]));
+    const entityOriginalIdToNewIdMap = new Map(output.identifiedEntities.map((oe, index) => [oe.id, uniqueIdentifiedEntities[index].id]));
     
     const updatedRelationships = output.relationships.map(rel => {
-        // Originalmente, source/target no prompt referem-se ao label da entidade (ou id inicial que pode ser o label).
-        // Precisamos mapear para os novos IDs únicos gerados.
-        const originalSourceEntity = output.identifiedEntities.find(e => e.id === rel.source);
-        const originalTargetEntity = output.identifiedEntities.find(e => e.id === rel.target);
-
-        const newSourceId = originalSourceEntity ? entityLabelToNewIdMap.get(originalSourceEntity.label) : rel.source;
-        const newTargetId = originalTargetEntity ? entityLabelToNewIdMap.get(originalTargetEntity.label) : rel.target;
+        const newSourceId = entityOriginalIdToNewIdMap.get(rel.source) || entityLabelToNewIdMap.get(rel.source) || rel.source;
+        const newTargetId = entityOriginalIdToNewIdMap.get(rel.target) || entityLabelToNewIdMap.get(rel.target) || rel.target;
         
+        // Ensure properties is an object
+        const validatedProperties = typeof rel.properties === 'object' && rel.properties !== null ? rel.properties : {};
+
         return {
             ...rel,
-            source: newSourceId || rel.source, // Fallback se não encontrar
-            target: newTargetId || rel.target, // Fallback
+            source: newSourceId,
+            target: newTargetId,
+            properties: validatedProperties,
         };
     }).filter(rel => {
-      // Ensure both source and target nodes (using their new unique IDs) actually exist in our uniqueIdentifiedEntities list.
       const sourceNodeExists = uniqueIdentifiedEntities.some(node => node.id === rel.source);
       const targetNodeExists = uniqueIdentifiedEntities.some(node => node.id === rel.target);
       return rel.source && rel.target && sourceNodeExists && targetNodeExists;
@@ -217,6 +214,3 @@ const findEntityRelationshipsFlow = ai.defineFlow(
     };
   }
 );
-
-
-

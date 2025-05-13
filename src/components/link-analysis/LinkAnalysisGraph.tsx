@@ -1,6 +1,6 @@
 "use client";
 
-import * as React from "react"; 
+import * as React from "react";
 import type { Edge, Node, NodeProps } from "reactflow";
 import ReactFlow, {
   Controls,
@@ -10,31 +10,29 @@ import ReactFlow, {
   useEdgesState,
   MarkerType,
   useReactFlow,
+  ReactFlowProvider,
 } from "reactflow";
 import "reactflow/dist/style.css";
-// Use the specific output type from the AI flow which now has parsed properties
-import type { FindEntityRelationshipsOutput } from "@/ai/flows/find-entity-relationships"; 
-import { useEffect, useMemo, useCallback, useRef } from "react"; 
+import type { FindEntityRelationshipsOutput } from "@/ai/flows/find-entity-relationships";
+import { useEffect, useMemo, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { LayoutGrid, Share2, ZoomIn, ZoomOut, Download } from "lucide-react";
+import { LayoutGrid, Share2, ZoomIn, ZoomOut } from "lucide-react";
 
 import dagre from 'dagre';
-// Use the specific IdentifiedEntity and Relationship types that reflect the *final parsed structure*
+
 type IdentifiedEntityForGraph = FindEntityRelationshipsOutput['identifiedEntities'][number];
 type RelationshipForGraph = FindEntityRelationshipsOutput['relationships'][number];
 
-
 interface CustomNodeData {
-  label: string; 
-  type?: string;  
+  label: string;
+  type?: string;
   isHighlighted?: boolean;
-  properties?: Record<string, string>; 
+  properties?: Record<string, string>;
 }
 
-
-const CustomNodeComponent = React.memo(({ data, selected, sourcePosition, targetPosition }: NodeProps<CustomNodeData>) => {
+const CustomNodeComponent = React.memo(({ data, selected }: NodeProps<CustomNodeData>) => {
   const nodeStyle: React.CSSProperties = {
     padding: '10px 15px',
     borderRadius: '8px',
@@ -44,8 +42,8 @@ const CustomNodeComponent = React.memo(({ data, selected, sourcePosition, target
     fontSize: '12px',
     textAlign: 'center',
     boxShadow: selected ? '0 0 0 2px hsl(var(--ring))' : '0 2px 4px rgba(0,0,0,0.05)',
-    minWidth: '120px', // Increased minWidth
-    maxWidth: '220px', // Increased maxWidth
+    minWidth: '120px',
+    maxWidth: '220px',
     cursor: 'grab',
     transition: 'box-shadow 0.2s ease-in-out, border-color 0.2s ease-in-out',
   };
@@ -57,17 +55,16 @@ const CustomNodeComponent = React.memo(({ data, selected, sourcePosition, target
     fontStyle: 'italic',
     textTransform: 'capitalize',
   };
-  
+
   const propertiesStyle: React.CSSProperties = {
     ...typeStyle,
     marginTop: '5px',
     fontSize: '9px',
     textAlign: 'left',
-    maxHeight: '60px', // Limit height of properties
-    overflowY: 'auto', // Add scroll if too many
-    paddingRight: '5px' // For scrollbar
+    maxHeight: '60px',
+    overflowY: 'auto',
+    paddingRight: '5px'
   };
-
 
   return (
     <div style={nodeStyle}>
@@ -88,21 +85,20 @@ const CustomNodeComponent = React.memo(({ data, selected, sourcePosition, target
 });
 CustomNodeComponent.displayName = 'CustomNode';
 
-
 const customNodeTypes = {
   custom: CustomNodeComponent,
 };
 
 interface LinkAnalysisGraphProps {
-    relationshipsData: RelationshipForGraph[]; 
-    identifiedEntitiesData: IdentifiedEntityForGraph[]; 
+    relationshipsData: RelationshipForGraph[];
+    identifiedEntitiesData: IdentifiedEntityForGraph[];
 }
 
 interface EdgeData {
   label: string;
   type?: string;
   strength?: number;
-  properties?: Record<string, string>; 
+  properties?: Record<string, string>;
   direction?: "direcional" | "bidirecional" | "nao_direcional";
 }
 
@@ -111,16 +107,16 @@ dagreGraph.setDefaultEdgeLabel(() => ({}));
 
 const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = 'TB') => {
   const isHorizontal = direction === 'LR';
-  dagreGraph.setGraph({ rankdir: direction, nodesep: 120, ranksep: 120, marginx: 20, marginy: 20 }); 
+  dagreGraph.setGraph({ rankdir: direction, nodesep: 120, ranksep: 120, marginx: 20, marginy: 20 });
 
   nodes.forEach((node) => {
-    let height = 60; // Base height
+    let height = 60;
     if (node.data.type) height += 15;
     if (node.data.properties && Object.keys(node.data.properties).length > 0) {
-        height += Math.min(3, Object.keys(node.data.properties).length) * 12; // Approx height per property line
+        height += Math.min(3, Object.keys(node.data.properties).length) * 12;
     }
-    height = Math.min(height, 150); // Max height for a node
-    dagreGraph.setNode(node.id, { width: 180, height: Math.max(70, height) }); 
+    height = Math.min(height, 150);
+    dagreGraph.setNode(node.id, { width: 180, height: Math.max(70, height) });
   });
 
   edges.forEach((edge) => {
@@ -142,12 +138,11 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = 'TB') => 
   return { nodes: layoutedNodes, edges: [...edges] };
 };
 
-
-export function LinkAnalysisGraph({ relationshipsData, identifiedEntitiesData }: LinkAnalysisGraphProps) {
+// Inner component that uses React Flow hooks
+function InnerGraph({ relationshipsData, identifiedEntitiesData }: LinkAnalysisGraphProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<CustomNodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<EdgeData>([]);
   const { fitView, zoomIn, zoomOut } = useReactFlow();
-
 
   useEffect(() => {
     if (!identifiedEntitiesData || !relationshipsData) {
@@ -155,42 +150,41 @@ export function LinkAnalysisGraph({ relationshipsData, identifiedEntitiesData }:
       setEdges([]);
       return;
     }
-    
-    // Use the already sanitized and unique IDs from the flow output
+
     const generatedNodes: Node<CustomNodeData>[] = identifiedEntitiesData.map(entity => ({
-      id: entity.id, 
+      id: entity.id,
       type: 'custom',
-      data: { 
-        label: entity.label, 
+      data: {
+        label: entity.label,
         type: entity.type,
-        properties: entity.properties 
+        properties: entity.properties
       },
-      position: { x: Math.random() * 500, y: Math.random() * 500 }, 
+      position: { x: Math.random() * 500, y: Math.random() * 500 },
     }));
 
     const generatedEdges: Edge<EdgeData>[] = relationshipsData
-    .filter(rel => rel.source && rel.target && generatedNodes.some(n => n.id === rel.source) && generatedNodes.some(n => n.id === rel.target)) 
+    .filter(rel => rel.source && rel.target && generatedNodes.some(n => n.id === rel.source) && generatedNodes.some(n => n.id === rel.target))
     .map((rel, index) => ({
-      id: `edge-${rel.source}-${rel.target}-${index}-${rel.label.replace(/[^a-zA-Z0-9]/g, '')}`, 
+      id: `edge-${rel.source}-${rel.target}-${index}-${rel.label.replace(/[^a-zA-Z0-9]/g, '')}`,
       source: rel.source,
       target: rel.target,
       label: rel.label,
-      type: 'smoothstep', 
+      type: 'smoothstep',
       animated: rel.strength !== undefined && rel.strength > 0.75,
       markerEnd: rel.direction === "direcional" || rel.direction === "bidirecional" ? {
           type: MarkerType.ArrowClosed,
-          width: 20, 
-          height: 20, 
+          width: 20,
+          height: 20,
           color: 'hsl(var(--primary))',
       } : undefined,
-      markerStart: rel.direction === "bidirecional" ? { 
+      markerStart: rel.direction === "bidirecional" ? {
           type: MarkerType.ArrowClosed,
-          width: 20, 
-          height: 20, 
+          width: 20,
+          height: 20,
           color: 'hsl(var(--primary))',
       } : undefined,
       style: {
-        strokeWidth: rel.strength !== undefined ? 1.5 + (rel.strength * 2.5) : 2, 
+        strokeWidth: rel.strength !== undefined ? 1.5 + (rel.strength * 2.5) : 2,
         stroke: rel.strength !== undefined && rel.strength < 0.4 ? 'hsl(var(--muted-foreground))' : 'hsl(var(--primary))',
         opacity: rel.strength !== undefined ? 0.5 + (rel.strength * 0.5) : 0.9,
       },
@@ -202,12 +196,12 @@ export function LinkAnalysisGraph({ relationshipsData, identifiedEntitiesData }:
         direction: rel.direction
       }
     }));
-    
+
     if (generatedNodes.length > 0) {
         const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(generatedNodes, generatedEdges, 'TB');
         setNodes(layoutedNodes);
         setEdges(layoutedEdges);
-         setTimeout(() => fitView({ padding: 0.1, duration: 500 }), 100);
+        setTimeout(() => fitView({ padding: 0.1, duration: 500 }), 100);
     } else {
         setNodes([]);
         setEdges([]);
@@ -224,17 +218,16 @@ export function LinkAnalysisGraph({ relationshipsData, identifiedEntitiesData }:
         direction
       );
       setNodes([...layoutedNodes]);
-      setEdges([...layoutedEdges]); // Spread to ensure new reference
-      
+      setEdges([...layoutedEdges]);
       setTimeout(() => {
         fitView({ padding: 0.1, duration: 500 });
       }, 50);
     },
     [nodes, edges, setNodes, setEdges, fitView]
   );
-  
+
   if (!identifiedEntitiesData || identifiedEntitiesData.length === 0) {
-    return null; 
+    return null;
   }
 
   return (
@@ -255,10 +248,10 @@ export function LinkAnalysisGraph({ relationshipsData, identifiedEntitiesData }:
                     <Share2 className="mr-1 h-4 w-4" /> Ajustar
                 </Button>
                  <Button variant="outline" size="sm" onClick={() => zoomIn({duration:300})} title="Aumentar Zoom">
-                    <ZoomIn className="mr-1 h-4 w-4" /> 
+                    <ZoomIn className="mr-1 h-4 w-4" />
                 </Button>
                  <Button variant="outline" size="sm" onClick={() => zoomOut({duration:300})} title="Diminuir Zoom">
-                    <ZoomOut className="mr-1 h-4 w-4" /> 
+                    <ZoomOut className="mr-1 h-4 w-4" />
                 </Button>
             </div>
             <div style={{ height: '700px', width: '100%' }} className="rounded-md border bg-muted/10 shadow-inner overflow-hidden">
@@ -271,10 +264,10 @@ export function LinkAnalysisGraph({ relationshipsData, identifiedEntitiesData }:
                     fitView
                     fitViewOptions={{ padding: 0.1, duration: 200}}
                     nodesDraggable
-                    nodesConnectable={false} 
+                    nodesConnectable={false}
                     elementsSelectable
                     attributionPosition="bottom-right"
-                    proOptions={{ hideAttribution: true }} 
+                    proOptions={{ hideAttribution: true }}
                     connectionLineStyle={{ stroke: 'hsl(var(--primary))', strokeWidth: 2 }}
                     defaultEdgeOptions={{
                         style: { strokeWidth: 1.5, stroke: 'hsl(var(--primary))' },
@@ -287,7 +280,7 @@ export function LinkAnalysisGraph({ relationshipsData, identifiedEntitiesData }:
                     }}
                 >
                     <Controls showInteractive={false} className="[&_button]:bg-card [&_button]:border-border [&_button_svg]:fill-foreground hover:[&_button]:bg-muted" />
-                    <MiniMap nodeStrokeWidth={3} zoomable pannable 
+                    <MiniMap nodeStrokeWidth={3} zoomable pannable
                         nodeColor={(n: Node<CustomNodeData>) => {
                             const typeLower = n.data?.type?.toLowerCase() || '';
                             if (typeLower.includes('pessoa') || typeLower.includes('organiza')) return 'hsl(var(--chart-1))';
@@ -309,15 +302,13 @@ export function LinkAnalysisGraph({ relationshipsData, identifiedEntitiesData }:
     </Card>
   );
 }
+InnerGraph.displayName = "InnerGraph";
 
-// It's good practice to wrap the Graph component with ReactFlowProvider if it's not already higher up the tree
-// This ensures hooks like useReactFlow() work correctly.
-// For this specific case, we can wrap it directly in the default export.
 
 export default function LinkAnalysisGraphWrapper(props: LinkAnalysisGraphProps) {
   return (
     <ReactFlowProvider>
-      <LinkAnalysisGraph {...props} />
+      <InnerGraph {...props} />
     </ReactFlowProvider>
-  )
+  );
 }

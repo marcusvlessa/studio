@@ -16,7 +16,7 @@ import { findEntityRelationships, type FindEntityRelationshipsInput, type FindEn
 import { analyzeDocument, type AnalyzeDocumentInput, type AnalyzeDocumentOutput } from "@/ai/flows/analyze-document-flow";
 import { Progress } from "@/components/ui/progress";
 import { Alert as ShadAlert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { LinkAnalysisGraph } from "@/components/link-analysis/LinkAnalysisGraph";
+import LinkAnalysisGraph from "@/components/link-analysis/LinkAnalysisGraph"; // Changed from named to default import
 import type { LinkCaseAnalysis } from "@/types/case";
 import { ScrollArea } from "@/components/ui/scroll-area";
 

@@ -1,4 +1,3 @@
-
 // src/app/image-analysis/page.tsx
 "use client";
 
@@ -11,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { FileImage, Search, RotateCcw, Loader2, Sparkles, Smile, FolderKanban, Info, Car } from "lucide-react"; 
+import { FileImage, Search, RotateCcw, Loader2, Sparkles, Smile, FolderKanban, Info, Car, GalleryHorizontalEnd } from "lucide-react"; 
 import { useToast } from "@/hooks/use-toast";
 import { analyzeImage, type AnalyzeImageInput, type AnalyzeImageOutput } from "@/ai/flows/analyze-image";
 import Image from "next/image"; 
@@ -46,7 +45,7 @@ function ImageAnalysisContent() {
       type: "Imagem",
       summary: `Análise de imagem: ${selectedFile.name} - ${aiOutput.description.substring(0, 50)}...`,
       originalFileName: selectedFile.name,
-      data: aiOutput,
+      data: aiOutput, // This now includes enhancedPhotoDataUri if available
     };
     
     try {
@@ -135,7 +134,7 @@ function ImageAnalysisContent() {
       }
       const photoDataUri = imagePreview;
       
-      setProgress(50); 
+      setProgress(30); 
 
       const input: AnalyzeImageInput = { photoDataUri };
       const result = await analyzeImage(input);
@@ -171,7 +170,7 @@ function ImageAnalysisContent() {
     <div className="flex flex-col gap-6">
       <header className="mb-4">
         <h1 className="text-3xl font-bold tracking-tight">Módulo de Análise de Imagens</h1>
-        <p className="text-muted-foreground">Envie imagens para análise por IA, geração de descrição, leitura de placas, sugestões de melhoria e detecção facial.</p>
+        <p className="text-muted-foreground">Envie imagens para análise por IA, geração de descrição, leitura de placas, sugestões de melhoria, detecção facial e melhoramento de imagem.</p>
       </header>
 
       {!isCaseSelected && (
@@ -212,9 +211,9 @@ function ImageAnalysisContent() {
           )}
           {imagePreview && (
             <div className="mt-4">
-              <Label>Pré-visualização da Imagem:</Label>
+              <Label>Pré-visualização da Imagem Original:</Label>
               <div className="mt-2 w-full max-w-md aspect-video relative overflow-hidden rounded-md border shadow-sm bg-muted/30">
-                <Image src={imagePreview} alt="Preview" layout="fill" objectFit="contain" data-ai-hint="foto imagem" />
+                <Image src={imagePreview} alt="Preview da Imagem Original" layout="fill" objectFit="contain" data-ai-hint="foto imagem" />
               </div>
             </div>
           )}
@@ -223,8 +222,9 @@ function ImageAnalysisContent() {
               <Label>Progresso da Análise:</Label>
               <Progress value={progress} className="w-full" />
               <p className="text-sm text-muted-foreground text-center">
-                {progress <= 50 && "Preparando imagem..."}
-                {progress > 50 && progress < 100 && "Analisando com IA..."}
+                {progress <= 30 && "Preparando imagem..."}
+                {progress > 30 && progress < 70 && "Analisando texto e objetos na imagem..."}
+                {progress >= 70 && progress < 100 && "Gerando imagem aprimorada e finalizando..."}
                 {progress === 100 && "Concluído!"}
               </p>
             </div>
@@ -242,96 +242,111 @@ function ImageAnalysisContent() {
       </Card>
 
       {analysisResult && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Resultados da Análise</CardTitle>
-             {caseName && <CardDescription>Referente ao caso: {caseName}</CardDescription>}
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div>
-              <Label htmlFor="description-output">Descrição Gerada:</Label>
-              <Textarea id="description-output" value={analysisResult.description} readOnly rows={6} className="bg-muted/50 mt-1" />
-            </div>
-            
-            {analysisResult.possiblePlateRead && (
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>Resultados da Análise Textual e Detecção</CardTitle>
+              {caseName && <CardDescription>Referente ao caso: {caseName}</CardDescription>}
+            </CardHeader>
+            <CardContent className="space-y-6">
               <div>
-                <Label htmlFor="plate-output">Possível Leitura de Placa:</Label>
-                <Input id="plate-output" value={analysisResult.possiblePlateRead} readOnly className="bg-muted/50 font-mono text-lg mt-1" />
-                <p className="text-xs text-muted-foreground mt-1">Nota: Leituras de placa são sugestivas e podem não ser 100% precisas.</p>
+                <Label htmlFor="description-output">Descrição Gerada:</Label>
+                <Textarea id="description-output" value={analysisResult.description} readOnly rows={6} className="bg-muted/50 mt-1" />
               </div>
-            )}
-            {!analysisResult.possiblePlateRead && analysisResult.possiblePlateRead !== undefined && (
-                 <p className="text-sm text-muted-foreground">Nenhuma placa de veículo detectada com confiança.</p>
-            )}
-
-            {analysisResult.vehicleDetails && analysisResult.vehicleDetails.length > 0 && (
-              <div>
-                <h3 className="text-md font-semibold mb-2 flex items-center"><Car className="mr-2 h-5 w-5 text-primary"/> Detalhes de Veículos Detectados</h3>
-                 <Accordion type="single" collapsible className="w-full">
-                    <AccordionItem value="vehicle-details">
-                    <AccordionTrigger className="text-sm py-2">Ver Detalhes dos Veículos ({analysisResult.vehicleDetails.length})</AccordionTrigger>
-                    <AccordionContent>
-                        <ul className="list-disc list-inside space-y-2 text-sm pl-2">
-                            {analysisResult.vehicleDetails.map((vehicle, index) => (
-                                <li key={index} className="p-2 border rounded-md bg-muted/20">
-                                    <strong>Veículo {index + 1}:</strong>
-                                    {vehicle.make && ` Marca: ${vehicle.make}.`}
-                                    {vehicle.model && ` Modelo: ${vehicle.model}.`}
-                                    {vehicle.confidence !== undefined && ` Confiança: ${(vehicle.confidence * 100).toFixed(0)}%.`}
-                                    {(!vehicle.make && !vehicle.model && vehicle.confidence === undefined) && " Sem detalhes adicionais."}
-                                </li>
-                            ))}
-                        </ul>
-                    </AccordionContent>
-                    </AccordionItem>
-                </Accordion>
-              </div>
-            )}
-
-            {analysisResult.enhancementSuggestions && analysisResult.enhancementSuggestions.length > 0 && (
+              
+              {analysisResult.possiblePlateRead && (
                 <div>
-                    <h3 className="text-md font-semibold mb-2 flex items-center"><Sparkles className="mr-2 h-5 w-5 text-primary"/> Sugestões de Melhoramento de Imagem</h3>
-                    <ul className="list-disc list-inside space-y-1 text-sm pl-2 bg-muted/30 p-3 rounded-md">
-                        {analysisResult.enhancementSuggestions.map((suggestion, index) => (
-                            <li key={index}>{suggestion}</li>
-                        ))}
-                    </ul>
+                  <Label htmlFor="plate-output">Possível Leitura de Placa:</Label>
+                  <Input id="plate-output" value={analysisResult.possiblePlateRead} readOnly className="bg-muted/50 font-mono text-lg mt-1" />
+                  <p className="text-xs text-muted-foreground mt-1">Nota: Leituras de placa são sugestivas e podem não ser 100% precisas.</p>
                 </div>
-            )}
+              )}
+              {!analysisResult.possiblePlateRead && analysisResult.possiblePlateRead !== undefined && (
+                  <p className="text-sm text-muted-foreground">Nenhuma placa de veículo detectada com confiança.</p>
+              )}
 
-            {analysisResult.facialRecognition && (
+              {analysisResult.vehicleDetails && analysisResult.vehicleDetails.length > 0 && (
                 <div>
-                     <h3 className="text-md font-semibold mb-2 flex items-center"><Smile className="mr-2 h-5 w-5 text-primary"/> Detecção Facial</h3>
-                    <div className="bg-muted/30 p-3 rounded-md space-y-2">
-                        <p className="text-sm"><strong>Faces Detectadas:</strong> {analysisResult.facialRecognition.facesDetected}</p>
-                        {analysisResult.facialRecognition.facesDetected > 0 && analysisResult.facialRecognition.details && analysisResult.facialRecognition.details.length > 0 && (
-                            <Accordion type="single" collapsible className="w-full">
-                                <AccordionItem value="face-details">
-                                <AccordionTrigger className="text-sm py-2">Ver Detalhes das Faces</AccordionTrigger>
-                                <AccordionContent>
-                                    <ul className="list-disc list-inside space-y-2 text-sm pl-2">
-                                    {analysisResult.facialRecognition.details.map((detail, index) => (
-                                        <li key={index} className="p-2 border rounded-md bg-muted/20">
-                                            <strong>Face {index + 1}:</strong> 
-                                            {detail.estimatedAge && ` Idade Estimada: ${detail.estimatedAge}.`}
-                                            {detail.attributesDescription && ` Atributos: ${detail.attributesDescription}.`}
-                                            {detail.confidence !== undefined && ` Confiança: ${(detail.confidence * 100).toFixed(0)}%.`}
-                                            {detail.boundingBox && ` Posição: [${detail.boundingBox.join(', ')}].`}
-                                            {(!detail.estimatedAge && !detail.attributesDescription && detail.confidence === undefined && !detail.boundingBox) && " Sem detalhes adicionais."}
-                                        </li>
-                                    ))}
-                                    </ul>
-                                </AccordionContent>
-                                </AccordionItem>
-                            </Accordion>
-                        )}
-                         <p className="text-xs text-muted-foreground mt-1">Nota: A detecção facial indica a presença de faces e características gerais, não realiza identificação pessoal.</p>
-                    </div>
+                  <h3 className="text-md font-semibold mb-2 flex items-center"><Car className="mr-2 h-5 w-5 text-primary"/> Detalhes de Veículos Detectados</h3>
+                  <Accordion type="single" collapsible className="w-full">
+                      <AccordionItem value="vehicle-details">
+                      <AccordionTrigger className="text-sm py-2">Ver Detalhes dos Veículos ({analysisResult.vehicleDetails.length})</AccordionTrigger>
+                      <AccordionContent>
+                          <ul className="list-disc list-inside space-y-2 text-sm pl-2">
+                              {analysisResult.vehicleDetails.map((vehicle, index) => (
+                                  <li key={index} className="p-2 border rounded-md bg-muted/20">
+                                      <strong>Veículo {index + 1}:</strong>
+                                      {vehicle.make && ` Marca: ${vehicle.make}.`}
+                                      {vehicle.model && ` Modelo: ${vehicle.model}.`}
+                                      {vehicle.confidence !== undefined && ` Confiança: ${(vehicle.confidence * 100).toFixed(0)}%.`}
+                                      {(!vehicle.make && !vehicle.model && vehicle.confidence === undefined) && " Sem detalhes adicionais."}
+                                  </li>
+                              ))}
+                          </ul>
+                      </AccordionContent>
+                      </AccordionItem>
+                  </Accordion>
                 </div>
-            )}
+              )}
 
-          </CardContent>
-        </Card>
+              {analysisResult.enhancementSuggestions && analysisResult.enhancementSuggestions.length > 0 && (
+                  <div>
+                      <h3 className="text-md font-semibold mb-2 flex items-center"><Sparkles className="mr-2 h-5 w-5 text-primary"/> Sugestões de Melhoramento de Imagem (Técnicas)</h3>
+                      <ul className="list-disc list-inside space-y-1 text-sm pl-2 bg-muted/30 p-3 rounded-md">
+                          {analysisResult.enhancementSuggestions.map((suggestion, index) => (
+                              <li key={index}>{suggestion}</li>
+                          ))}
+                      </ul>
+                  </div>
+              )}
+
+              {analysisResult.facialRecognition && (
+                  <div>
+                      <h3 className="text-md font-semibold mb-2 flex items-center"><Smile className="mr-2 h-5 w-5 text-primary"/> Detecção Facial</h3>
+                      <div className="bg-muted/30 p-3 rounded-md space-y-2">
+                          <p className="text-sm"><strong>Faces Detectadas:</strong> {analysisResult.facialRecognition.facesDetected}</p>
+                          {analysisResult.facialRecognition.facesDetected > 0 && analysisResult.facialRecognition.details && analysisResult.facialRecognition.details.length > 0 && (
+                              <Accordion type="single" collapsible className="w-full">
+                                  <AccordionItem value="face-details">
+                                  <AccordionTrigger className="text-sm py-2">Ver Detalhes das Faces</AccordionTrigger>
+                                  <AccordionContent>
+                                      <ul className="list-disc list-inside space-y-2 text-sm pl-2">
+                                      {analysisResult.facialRecognition.details.map((detail, index) => (
+                                          <li key={index} className="p-2 border rounded-md bg-muted/20">
+                                              <strong>Face {index + 1}:</strong> 
+                                              {detail.estimatedAge && ` Idade Estimada: ${detail.estimatedAge}.`}
+                                              {detail.attributesDescription && ` Atributos: ${detail.attributesDescription}.`}
+                                              {detail.confidence !== undefined && ` Confiança: ${(detail.confidence * 100).toFixed(0)}%.`}
+                                              {detail.boundingBox && ` Posição: [${detail.boundingBox.join(', ')}].`}
+                                              {(!detail.estimatedAge && !detail.attributesDescription && detail.confidence === undefined && !detail.boundingBox) && " Sem detalhes adicionais."}
+                                          </li>
+                                      ))}
+                                      </ul>
+                                  </AccordionContent>
+                                  </AccordionItem>
+                              </Accordion>
+                          )}
+                          <p className="text-xs text-muted-foreground mt-1">Nota: A detecção facial indica a presença de faces e características gerais, não realiza identificação pessoal.</p>
+                      </div>
+                  </div>
+              )}
+            </CardContent>
+          </Card>
+          
+          {analysisResult.enhancedPhotoDataUri && (
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2"><GalleryHorizontalEnd className="h-6 w-6 text-primary"/> Imagem Melhorada pela IA</CardTitle>
+                <CardDescription>Esta é a versão da imagem aprimorada pela IA para melhor visualização de detalhes.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="mt-2 w-full max-w-xl mx-auto aspect-video relative overflow-hidden rounded-md border shadow-lg bg-muted/30">
+                  <Image src={analysisResult.enhancedPhotoDataUri} alt="Imagem Melhorada pela IA" layout="fill" objectFit="contain" data-ai-hint="foto melhorada" />
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
       )}
     </div>
   );
@@ -345,3 +360,4 @@ export default function ImageAnalysisPage() {
   )
 }
 
+    

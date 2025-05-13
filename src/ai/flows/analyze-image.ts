@@ -3,9 +3,9 @@
 'use server';
 
 /**
- * @fileOverview Fluxo de IA para analisar imagens, extrair dados, gerar descrições, sugerir melhorias e detectar faces.
+ * @fileOverview Fluxo de IA para analisar imagens, extrair dados, gerar descrições, sugerir melhorias, detectar faces e gerar uma versão melhorada da imagem.
  *
- * - analyzeImage - Analisa uma imagem para extrair dados relevantes, gerar uma descrição, sugerir melhorias e detectar faces.
+ * - analyzeImage - Analisa uma imagem para extrair dados relevantes, gerar uma descrição, sugerir melhorias, detectar faces e gerar uma imagem aprimorada.
  * - AnalyzeImageInput - O tipo de entrada para a função analyzeImage.
  * - AnalyzeImageOutput - O tipo de retorno para a função analyzeImage.
  */
@@ -44,7 +44,8 @@ const AnalyzeImageOutputSchema = z.object({
     facesDetected: z.number().int().nonnegative().describe('Número de faces humanas detectadas na imagem.'),
     details: z.array(FacialRecognitionDetailSchema).optional().describe('Detalhes sobre cada face detectada, se a IA puder fornecer (sem identificação pessoal).')
   }).optional().describe('Resultados da detecção facial. Não realiza identificação pessoal.'),
-  vehicleDetails: z.array(VehicleDetailSchema).optional().describe('Lista de veículos detectados com suas possíveis marcas e modelos.')
+  vehicleDetails: z.array(VehicleDetailSchema).optional().describe('Lista de veículos detectados com suas possíveis marcas e modelos.'),
+  enhancedPhotoDataUri: z.string().optional().describe("A URI de dados da imagem melhorada pela IA, se o melhoramento foi aplicado e bem-sucedido."),
 });
 
 export type AnalyzeImageOutput = z.infer<typeof AnalyzeImageOutputSchema>;
@@ -73,10 +74,12 @@ export async function analyzeImage(input: AnalyzeImageInput): Promise<AnalyzeIma
   return analyzeImageFlow(input);
 }
 
-const analyzeImagePrompt = ai.definePrompt({
-  name: 'analyzeImagePrompt',
+const analyzeImageTextPrompt = ai.definePrompt({
+  name: 'analyzeImageTextPrompt',
   input: {schema: AnalyzeImageInputSchema},
-  output: {schema: AnalyzeImageOutputSchema},
+  output: {
+    schema: AnalyzeImageOutputSchema.omit({ enhancedPhotoDataUri: true }) // Textual analysis doesn't produce enhanced image URI
+  },
   prompt: `Você é um especialista em análise forense de imagens. Seu trabalho é analisar uma imagem e extrair dados relevantes, gerar uma descrição detalhada, sugerir melhorias (e listar as aplicadas por você, se houver), detectar faces e identificar veículos.
 
   Analise a seguinte imagem:
@@ -98,7 +101,7 @@ const analyzeImagePrompt = ai.definePrompt({
       *   Se veículos forem visíveis na imagem, tente identificar a marca (ex: Ford, Volkswagen, Fiat) e o modelo (ex: Fiesta, Gol, Palio) de cada um.
       *   Para cada veículo identificado, preencha os campos 'make', 'model' e 'confidence' (0 a 1) no array 'vehicleDetails'. Se não for possível determinar a marca ou modelo, deixe os campos correspondentes vazios ou indique "Desconhecido(a)". Se nenhum veículo for detectado, o array 'vehicleDetails' deve ser vazio.
 
-  Seja objetivo e forneça informações factuais baseadas na imagem. Certifique-se de preencher todos os campos do schema de saída, mesmo que com valores indicando ausência de informação (ex: "Nenhuma placa detectada", lista vazia para sugestões, 0 para faces).
+  Seja objetivo e forneça informações factuais baseadas na imagem. Certifique-se de preencher todos os campos do schema de saída (exceto 'enhancedPhotoDataUri'), mesmo que com valores indicando ausência de informação (ex: "Nenhuma placa detectada", lista vazia para sugestões, 0 para faces).
 `,
   config: {
     safetySettings: [
@@ -116,14 +119,50 @@ const analyzeImageFlow = ai.defineFlow(
     inputSchema: AnalyzeImageInputSchema,
     outputSchema: AnalyzeImageOutputSchema,
   },
-  async input => {
-    const {output} = await analyzeImagePrompt(input);
-    if (!output) {
-        throw new Error("A análise da imagem não retornou um resultado válido da IA.");
+  async (input: AnalyzeImageInput): Promise<AnalyzeImageOutput> => {
+    // 1. Get textual analysis and suggestions
+    const { output: textualAnalysis } = await analyzeImageTextPrompt(input);
+    if (!textualAnalysis) {
+        throw new Error("A análise textual da imagem não retornou um resultado válido da IA.");
     }
-    return output;
+
+    let enhancedPhotoDataUri: string | undefined = undefined;
+
+    // 2. Attempt to generate an enhanced image
+    try {
+      const enhancementPrompt = [
+        { media: { url: input.photoDataUri } },
+        { text: "Aprimore esta imagem para análise forense. Aumente a nitidez, melhore o contraste, reduza o ruído e realce detalhes ocultos. Preserve a integridade factual da imagem original e evite adicionar elementos que não existem." }
+      ];
+      
+      const { media } = await ai.generate({
+        model: 'googleai/gemini-2.0-flash-exp', // Explicitly use the image generation capable model
+        prompt: enhancementPrompt,
+        config: {
+          responseModalities: ['TEXT', 'IMAGE'], // Must request IMAGE modality
+          safetySettings: [ // Relax safety settings if needed for forensic images, use with caution
+            { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+            { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+            { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+            { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+          ],
+        },
+      });
+
+      if (media && media.url) {
+        enhancedPhotoDataUri = media.url;
+      }
+    } catch (enhancementError) {
+      console.warn("Falha ao gerar imagem aprimorada:", enhancementError);
+      // Proceed without enhanced image if generation fails
+    }
+    
+    // 3. Combine results
+    return {
+      ...textualAnalysis,
+      enhancedPhotoDataUri: enhancedPhotoDataUri,
+    };
   }
 );
 
-
-
+    

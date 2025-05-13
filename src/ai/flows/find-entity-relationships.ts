@@ -25,7 +25,7 @@ const RelationshipSchema = z.object({
   type: z.string().optional().describe('Um tipo categorizado de relacionamento (ex: Comunicação, Financeiro, Familiar, Profissional, Geográfico, Técnico, Posse, Social).'),
   direction: z.enum(["direcional", "bidirecional", "nao_direcional"]).optional().default("nao_direcional").describe("A direcionalidade do relacionamento. 'direcional' de source para target, 'bidirecional' para ambos, 'nao_direcional' para associação sem direção clara."),
   strength: z.number().min(0).max(1).optional().describe('Força estimada ou confiança do relacionamento (0 a 1), se aplicável.'),
-  properties: z.string().optional().default("{}").describe('Uma STRING JSON VÁLIDA representando propriedades adicionais do relacionamento (ex: "{\"data_hora\": \"DD/MM/AAAA HH:MM\", \"valor_texto\": \"R$ XXX,XX\", \"frequencia_texto\": \"3 vezes\"}"). Os valores dentro do JSON devem ser strings. Se não houver, envie "{}" ou omita.')
+  properties: z.string().optional().default("{}").describe('Uma STRING JSON VÁLIDA representando propriedades adicionais do relacionamento (ex: "{\"data_hora\": \"DD/MM/AAAA HH:MM\", \"valor_texto\": \"R$ XXX,XX\", \"frequencia_texto\": \"3 vezes\"}"). Os valores dentro do JSON devem ser strings. Se não houver, envie "{}" ou omita o campo.')
 });
 
 const FindEntityRelationshipsInputSchema = z.object({
@@ -186,11 +186,11 @@ const findEntityRelationshipsFlow = ai.defineFlow(
     console.log("Análise de vínculos: Saída bruta da IA recebida:", JSON.stringify(rawOutput, null, 2));
 
     const aiEntityIdToReactFlowIdMap = new Map<string, string>();
-    const reactFlowIdUsageMap = new Map<string, number>(); // Tracks usage of base IDs to ensure uniqueness
+    const reactFlowIdUsageMap = new Map<string, number>(); 
 
     const parsedIdentifiedEntities: FindEntityRelationshipsOutput['identifiedEntities'] = rawOutput.identifiedEntities.map((entity, idx) => {
       let baseReactFlowId = entity.label.replace(/[^a-zA-Z0-9_.-]/g, '_').replace(/\.$/, '').substring(0, 50).trim();
-      if (baseReactFlowId.length === 0 || /^\W+$/.test(baseReactFlowId)) { // If empty or only non-alphanumeric
+      if (baseReactFlowId.length === 0 || /^\W+$/.test(baseReactFlowId)) { 
           baseReactFlowId = `entidade_gerada_${entityFlowCounter++}`;
       }
 
@@ -201,13 +201,10 @@ const findEntityRelationshipsFlow = ai.defineFlow(
       }
       reactFlowIdUsageMap.set(baseReactFlowId, count + 1);
       
-      // Map the AI's original entity.id to the new finalReactFlowId
-      if (entity.id) { // Ensure AI provided an ID
+      if (entity.id) { 
           aiEntityIdToReactFlowIdMap.set(entity.id, finalReactFlowId);
       } else {
-          console.warn(`Análise de vínculos: Entidade da IA sem ID original. Label: ${entity.label}, Index: ${idx}. Usando ${finalReactFlowId} como ID.`);
-          // If AI didn't provide an ID, we might need a strategy here, but for now, let's assume it will.
-          // If it often doesn't, we might need to map based on label or another unique AI-provided key.
+          console.error(`Análise de vínculos: Entidade da IA sem ID original! Label: ${entity.label}, Index: ${idx}. Não será possível vincular esta entidade em relacionamentos. O prompt da IA DEVE fornecer um 'id' para cada 'identifiedEntities'.`);
       }
 
       let parsedProperties: Record<string, string> = {};
@@ -230,7 +227,7 @@ const findEntityRelationshipsFlow = ai.defineFlow(
       return { ...entity, id: finalReactFlowId, properties: parsedProperties }; 
     });
     
-    console.log("Análise de vínculos: Entidades parseadas para ReactFlow:", JSON.stringify(parsedIdentifiedEntities, null, 2));
+    console.log("Análise de vínculos: Entidades parseadas para ReactFlow (mostrando id e label):", JSON.stringify(parsedIdentifiedEntities.map(e => ({id: e.id, label: e.label})), null, 2));
     console.log("Análise de vínculos: Mapa de IDs (ID IA -> ID ReactFlow):", JSON.stringify(Array.from(aiEntityIdToReactFlowIdMap.entries()), null, 2));
 
     const parsedRelationships: FindEntityRelationshipsOutput['relationships'] = rawOutput.relationships.map(rel => {
@@ -238,11 +235,11 @@ const findEntityRelationshipsFlow = ai.defineFlow(
         const reactFlowTargetId = aiEntityIdToReactFlowIdMap.get(rel.target);
         
         if (!reactFlowSourceId) {
-            console.warn(`Análise de vínculos: ID de origem do relacionamento '${rel.label}' ('${rel.source}') não encontrado no mapa de IDs. Relacionamento ignorado.`);
+            console.warn(`Análise de vínculos: ID de origem do relacionamento IA ('${rel.source}') não encontrado no mapa de IDs para o relacionamento: '${rel.label}'. Relacionamento ignorado. Verifique se a IA forneceu um 'id' para a entidade de origem e usou esse mesmo 'id' no relacionamento.`);
             return null;
         }
         if (!reactFlowTargetId) {
-            console.warn(`Análise de vínculos: ID de destino do relacionamento '${rel.label}' ('${rel.target}') não encontrado no mapa de IDs. Relacionamento ignorado.`);
+            console.warn(`Análise de vínculos: ID de destino do relacionamento IA ('${rel.target}') não encontrado no mapa de IDs para o relacionamento: '${rel.label}'. Relacionamento ignorado. Verifique se a IA forneceu um 'id' para a entidade de destino e usou esse mesmo 'id' no relacionamento.`);
             return null;
         }
         
@@ -265,26 +262,29 @@ const findEntityRelationshipsFlow = ai.defineFlow(
         }
         
         return {
-            ...rel,
             source: reactFlowSourceId,
             target: reactFlowTargetId,
+            label: rel.label,
+            type: rel.type,
+            direction: rel.direction,
+            strength: rel.strength,
             properties: parsedRelProperties,
         };
-    }).filter(rel => {
-        if (!rel) return false; 
-        const sourceNodeExists = parsedIdentifiedEntities.some(node => node.id === rel.source);
-        const targetNodeExists = parsedIdentifiedEntities.some(node => node.id === rel.target);
+    }).filter(rel => rel !== null) 
+      .filter(rel => { 
+        const sourceNodeExists = parsedIdentifiedEntities.some(node => node.id === rel!.source);
+        const targetNodeExists = parsedIdentifiedEntities.some(node => node.id === rel!.target);
         
         if (!sourceNodeExists) {
-            console.warn(`Análise de vínculos: Filtrando aresta (APÓS MAPEAMENTO) devido a nó de origem ('${rel.source}') ausente para o relacionamento: '${rel.label}'. Verifique se a entidade de origem foi corretamente identificada e mapeada.`);
+            console.warn(`Análise de vínculos: Filtrando aresta (APÓS MAPEAMENTO) devido a nó de origem ('${rel!.source}') ausente para o relacionamento: '${rel!.label}'. Verifique se a entidade de origem foi corretamente identificada e mapeada.`);
         }
         if (!targetNodeExists) {
-            console.warn(`Análise de vínculos: Filtrando aresta (APÓS MAPEAMENTO) devido a nó de destino ('${rel.target}') ausente para o relacionamento: '${rel.label}'. Verifique se a entidade de destino foi corretamente identificada e mapeada.`);
+            console.warn(`Análise de vínculos: Filtrando aresta (APÓS MAPEAMENTO) devido a nó de destino ('${rel!.target}') ausente para o relacionamento: '${rel!.label}'. Verifique se a entidade de destino foi corretamente identificada e mapeada.`);
         }
         return sourceNodeExists && targetNodeExists;
     }) as FindEntityRelationshipsOutput['relationships']; 
 
-    console.log("Análise de vínculos: Relacionamentos parseados para ReactFlow:", JSON.stringify(parsedRelationships, null, 2));
+    console.log("Análise de vínculos: Relacionamentos parseados para ReactFlow (mostrando source, target, label):", JSON.stringify(parsedRelationships.map(r => ({source: r.source, target: r.target, label: r.label})), null, 2));
 
     const finalSummary = analysisSummaryPrefix + (rawOutput.analysisSummary || "Análise de vínculos concluída. Nenhum resumo adicional fornecido pela IA.");
     console.log("Análise de vínculos: Resumo final:", finalSummary);
@@ -293,6 +293,8 @@ const findEntityRelationshipsFlow = ai.defineFlow(
         console.warn("Análise de vínculos: A IA retornou relacionamentos, mas nenhum pôde ser mapeado ou validado. Verifique os logs de 'ID de origem/destino... não encontrado' ou 'Filtrando aresta APÓS MAPEAMENTO'.");
     }
 
+    console.log("Análise de Vínculos: Final output from flow - Identified Entities (showing id and label):", JSON.stringify(parsedIdentifiedEntities.map(e => ({id: e.id, label: e.label})), null, 2));
+    console.log("Análise de Vínculos: Final output from flow - Parsed Relationships (showing source, target, label):", JSON.stringify(parsedRelationships.map(r => ({source: r.source, target: r.target, label: r.label})), null, 2));
 
     return {
       identifiedEntities: parsedIdentifiedEntities,
@@ -301,4 +303,3 @@ const findEntityRelationshipsFlow = ai.defineFlow(
     };
   }
 );
-

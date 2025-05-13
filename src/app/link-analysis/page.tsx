@@ -1,4 +1,3 @@
-
 // src/app/link-analysis/page.tsx
 "use client";
 
@@ -16,7 +15,7 @@ import { findEntityRelationships, type FindEntityRelationshipsInput, type FindEn
 import { analyzeDocument, type AnalyzeDocumentInput, type AnalyzeDocumentOutput } from "@/ai/flows/analyze-document-flow";
 import { Progress } from "@/components/ui/progress";
 import { Alert as ShadAlert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import LinkAnalysisGraph from "@/components/link-analysis/LinkAnalysisGraph"; // Changed from named to default import
+import LinkAnalysisGraph from "@/components/link-analysis/LinkAnalysisGraph";
 import type { LinkCaseAnalysis } from "@/types/case";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -76,8 +75,6 @@ function LinkAnalysisContent() {
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      // Permite uma gama mais ampla de tipos de arquivo, pois a extração de texto tentará lidar com eles.
-      // A IA de análise de documentos também tem sua própria lógica para tipos suportados.
       setSelectedFile(file);
       setAnalysisOutput(null);
       setProgress(0);
@@ -92,41 +89,44 @@ function LinkAnalysisContent() {
       return [];
     }
 
+    const firstFewLines = text.substring(0, Math.min(text.length, 1000));
+    const commonDelimiters = [',', ';', '\t', '|'];
+    let detectedDelimiter: string | null = null;
+
+    for (const delimiter of commonDelimiters) {
+        if (firstFewLines.split('\n')[0].includes(delimiter)) { 
+            const counts = firstFewLines.split('\n').map(line => line.split(delimiter).length);
+            if (counts.length > 1 && counts.every(c => c > 1) && counts.reduce((a,b) => a+b, 0) / counts.length > 1.5) {
+                detectedDelimiter = delimiter;
+                break;
+            }
+        }
+    }
+    
     const lines = text.split(/\r?\n/);
-    const potentialDelimiters = [',', ';', '\t', '|'];
 
     lines.forEach(line => {
       const trimmedLine = line.trim();
       if (!trimmedLine) return;
 
       let cells: string[] = [];
-      let delimiterFound = false;
-
-      for (const delimiter of potentialDelimiters) {
-        if (trimmedLine.includes(delimiter)) {
-          // Split by delimiter and filter out empty strings or very short strings
-          const parts = trimmedLine.split(delimiter)
-            .map(p => p.replace(/^["']|["']$/g, '').trim()) // Remove surrounding quotes and trim
-            .filter(p => p && p.length > 1 && p.length < 200 && !/^\W+$/.test(p)); // Basic sanity checks
-
-          if (parts.length > 1) { // Consider it a delimited line if more than one part results
-            cells.push(...parts);
-            delimiterFound = true;
-            break; 
-          }
-        }
-      }
-
-      if (!delimiterFound && trimmedLine.length > 1 && trimmedLine.length < 500 && !/^\W+$/.test(trimmedLine)) { 
-        // If no delimiter, and it's not just symbols, add the whole line as a potential entity (for non-tabular text files)
-        // Or if it's a very long line from a CSV that didn't split well.
-        entities.add(trimmedLine);
+      if (detectedDelimiter) {
+          cells = trimmedLine.split(detectedDelimiter)
+            .map(p => p.replace(/^["']|["']$/g, '').trim()) 
+            .filter(p => p && p.length > 0 && p.length < 250); 
       } else {
-        cells.forEach(cell => entities.add(cell));
+          if (trimmedLine.includes('  ')) { 
+            cells = trimmedLine.split(/\s{2,}/) 
+                .map(p => p.trim())
+                .filter(p => p && p.length > 0 && p.length < 250);
+          }
+          if (cells.length <= 1 && trimmedLine.length > 0 && trimmedLine.length < 500) { 
+            cells = [trimmedLine]; 
+          }
       }
+      cells.forEach(cell => { if(cell) entities.add(cell); });
     });
     
-    // Add specific pattern matching as a secondary step if desired, but the primary goal here is cell/line extraction
     const textWithoutNewlines = text.replace(/\r?\n/g, ' ');
     const specificPatterns = {
         phone: /(?:\+55\s?)?(?:\(?\d{2}\)?\s?)?(?:9\s?)?\d{4,5}-?\d{4}/g,
@@ -141,8 +141,7 @@ function LinkAnalysisContent() {
         }
     });
 
-
-    return Array.from(entities).filter(e => e.length > 1 && e.length < 250); // Filter out very short/long entities
+    return Array.from(entities).filter(e => e && e.length > 1 && e.length < 250);
   };
 
   const handleAnalyze = async () => {
@@ -165,20 +164,19 @@ function LinkAnalysisContent() {
     const fileType = selectedFile.type.toLowerCase();
 
     try {
-      // Step 1: Extract text/entities from the file
       if (fileType === "text/csv" || fileType === "text/plain" || fileName.endsWith(".txt") || fileName.endsWith(".csv")) {
         setProgress(20);
-        setProcessingMessage(`Lendo e parseando arquivo de texto/CSV: ${fileName}...`);
+        setProcessingMessage(`Lendo e interpretando arquivo de texto/CSV: ${fileName}...`);
         const textContent = await selectedFile.text();
         entitiesForRelationshipAnalysis = parseEntitiesFromText(textContent);
         setProgress(40);
         if (entitiesForRelationshipAnalysis.length === 0) {
-          setProcessingMessage(`Nenhuma entidade específica encontrada por parse local em '${fileName}'. Enviando conteúdo completo para IA...`);
-          entitiesForRelationshipAnalysis = [textContent.substring(0, 50000)]; // Send a large chunk if parsing fails
+          setProcessingMessage(`Nenhuma entidade específica encontrada por interpretação local em '${fileName}'. Enviando conteúdo completo para IA...`);
+          entitiesForRelationshipAnalysis = [textContent.substring(0, 50000)]; 
         } else {
           setProcessingMessage(`Entidades extraídas localmente: ${entitiesForRelationshipAnalysis.length}. Enviando para IA...`);
         }
-      } else { // For PDF, DOCX, XLSX, etc., use analyzeDocument flow first
+      } else { 
         setProgress(10);
         setProcessingMessage(`Preparando arquivo '${fileName}' para extração de conteúdo pela IA...`);
         
@@ -197,12 +195,11 @@ function LinkAnalysisContent() {
         const docResult: AnalyzeDocumentOutput = await analyzeDocument(docInput);
         
         if (docResult.extractedText && !docResult.extractedText.startsWith("AVISO DO SISTEMA:")) {
-            // Use a combination of extracted text (parsed by lines/cells if it looks tabular) and key entities
             entitiesForRelationshipAnalysis = parseEntitiesFromText(docResult.extractedText);
             if (docResult.keyEntities && docResult.keyEntities.length > 0) {
                 entitiesForRelationshipAnalysis.push(...docResult.keyEntities.map(ke => `${ke.type}: ${ke.value}`));
             }
-            entitiesForRelationshipAnalysis = Array.from(new Set(entitiesForRelationshipAnalysis.filter(e => e && e.trim() !== "" && e.length < 250))); // Deduplicate and clean
+            entitiesForRelationshipAnalysis = Array.from(new Set(entitiesForRelationshipAnalysis.filter(e => e && e.trim() !== "" && e.length < 250)));
             toast({ title: "Extração de Conteúdo do Arquivo Concluída", description: `Texto e entidades primárias extraídos de '${fileName}'.` });
         } else {
              toast({ 
@@ -211,7 +208,7 @@ function LinkAnalysisContent() {
                 description: docResult.summary || `O conteúdo de '${fileName}' não pôde ser lido/extraído diretamente pela IA de documentos. A análise de vínculos prosseguirá com base nos metadados (nome, tipo).`,
                 duration: 8000
             });
-            entitiesForRelationshipAnalysis.push(fileName); // Fallback to filename
+            entitiesForRelationshipAnalysis.push(fileName);
             if (selectedFile.type) entitiesForRelationshipAnalysis.push(selectedFile.type);
         }
       }
@@ -361,7 +358,7 @@ function LinkAnalysisContent() {
         <AlertTitle>Dicas para Melhor Análise de Vínculos</AlertTitle>
         <AlertDescription>
           <ul className="list-disc list-inside text-xs space-y-1">
-            <li>Para arquivos <strong>TXT/CSV</strong>: idealmente, cada linha ou célula deve conter uma entidade clara. A IA tentará parsear e identificar entidades.</li>
+            <li>Para arquivos <strong>TXT/CSV</strong>: idealmente, cada linha ou célula deve conter uma entidade clara. A IA tentará interpretar e identificar entidades.</li>
             <li>Para <strong>PDF, DOCX, XLSX</strong>: a IA extrairá o texto e depois tentará identificar entidades e relações. Documentos complexos ou baseados em imagem podem ter limitações.</li>
             <li>Selecionar um <strong>Contexto da Análise</strong> específico ajuda a IA a focar e aprimorar a identificação de entidades e relações.</li>
             <li>Se a extração de entidades do conteúdo falhar, a análise de vínculos usará o nome do arquivo e tipo MIME como entidades base.</li>
@@ -382,20 +379,20 @@ function LinkAnalysisContent() {
         </Card>
       )}
 
-      {analysisOutput && analysisOutput.relationships && analysisOutput.relationships.length > 0 && !isLoading && (
-        <LinkAnalysisGraph relationshipsData={analysisOutput.relationships} identifiedEntitiesData={analysisOutput.identifiedEntities} />
+      {analysisOutput && analysisOutput.identifiedEntities && analysisOutput.identifiedEntities.length > 0 && !isLoading && (
+        <LinkAnalysisGraph 
+            relationshipsData={analysisOutput.relationships || []} 
+            identifiedEntitiesData={analysisOutput.identifiedEntities} />
       )}
       
-
-      {analysisOutput && (!analysisOutput.relationships || analysisOutput.relationships.length === 0) && !isLoading && selectedFile && (
+      {analysisOutput && (!analysisOutput.identifiedEntities || analysisOutput.identifiedEntities.length === 0) && !isLoading && selectedFile && (
          <Card className="mt-6">
             <CardContent className="p-6 flex flex-col items-center justify-center min-h-[200px]">
                 <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
-                <p className="text-muted-foreground text-center font-semibold">Nenhum vínculo explícito encontrado ou visualizável.</p>
+                <p className="text-muted-foreground text-center font-semibold">Nenhuma entidade identificada para visualização.</p>
                 <p className="text-xs text-muted-foreground mt-1 text-center">
                   Verifique o "Resumo da Análise de Inteligência" acima para mais detalhes.
-                  Causas comuns incluem: poucas entidades distintas encontradas, dados não relacionáveis no arquivo fornecido, ou o contexto de análise não se aplicou bem aos dados.
-                  Arquivos muito complexos, com formatação incomum ou conteúdo não textual podem dificultar a extração de vínculos significativos.
+                  O arquivo pode não conter dados textuais claros ou as entidades podem não ter sido reconhecidas.
                 </p>
             </CardContent>
         </Card>
@@ -411,4 +408,3 @@ export default function LinkAnalysisPage() {
     </Suspense>
   )
 }
-

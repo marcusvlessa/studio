@@ -89,14 +89,17 @@ function LinkAnalysisContent() {
       return [];
     }
 
-    const firstFewLines = text.substring(0, Math.min(text.length, 1000));
+    const firstFewLines = text.substring(0, Math.min(text.length, 2000)); // Increased sample size
     const commonDelimiters = [',', ';', '\t', '|'];
     let detectedDelimiter: string | null = null;
 
+    // Try to detect delimiter based on consistency in first few lines
     for (const delimiter of commonDelimiters) {
-        if (firstFewLines.split('\n')[0].includes(delimiter)) { 
-            const counts = firstFewLines.split('\n').map(line => line.split(delimiter).length);
-            if (counts.length > 1 && counts.every(c => c > 1) && counts.reduce((a,b) => a+b, 0) / counts.length > 1.5) {
+        const linesSample = firstFewLines.split('\n').slice(0, 5); // Check first 5 lines
+        if (linesSample.length > 1 && linesSample.every(line => line.includes(delimiter))) {
+            const counts = linesSample.map(line => line.split(delimiter).length);
+            // Check if counts are consistent and greater than 1
+            if (counts.every(c => c === counts[0] && c > 1)) {
                 detectedDelimiter = delimiter;
                 break;
             }
@@ -115,24 +118,30 @@ function LinkAnalysisContent() {
             .map(p => p.replace(/^["']|["']$/g, '').trim()) 
             .filter(p => p && p.length > 0 && p.length < 250); 
       } else {
+          // Fallback if no clear delimiter: try splitting by multiple spaces, then consider whole line
           if (trimmedLine.includes('  ')) { 
             cells = trimmedLine.split(/\s{2,}/) 
                 .map(p => p.trim())
                 .filter(p => p && p.length > 0 && p.length < 250);
           }
-          if (cells.length <= 1 && trimmedLine.length > 0 && trimmedLine.length < 500) { 
+          if (cells.length === 0 && trimmedLine.length > 0 && trimmedLine.length < 500) { 
+            // If no cells by delimiter or multiple spaces, add the whole trimmed line if it's not too long
             cells = [trimmedLine]; 
           }
       }
       cells.forEach(cell => { if(cell) entities.add(cell); });
     });
     
+    // Also, extract specific patterns regardless of delimiters
     const textWithoutNewlines = text.replace(/\r?\n/g, ' ');
     const specificPatterns = {
         phone: /(?:\+55\s?)?(?:\(?\d{2}\)?\s?)?(?:9\s?)?\d{4,5}-?\d{4}/g,
         email: /\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b/gi,
         cpf: /\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/g,
         cnpj: /\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/g,
+        // placa: /\b[A-Z]{3}-?\d[A-Z0-9]\d{2}\b/gi, // Brazilian plate
+        // money: /R\$\s*\d{1,3}(?:\.\d{3})*(?:,\d{2})?/g,
+        // date: /\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g,
     };
     Object.values(specificPatterns).forEach(pattern => {
         const matches = textWithoutNewlines.matchAll(pattern);
@@ -141,7 +150,7 @@ function LinkAnalysisContent() {
         }
     });
 
-    return Array.from(entities).filter(e => e && e.length > 1 && e.length < 250);
+    return Array.from(entities).filter(e => e && e.trim().length > 1 && e.trim().length < 250);
   };
 
   const handleAnalyze = async () => {
@@ -162,9 +171,10 @@ function LinkAnalysisContent() {
     let entitiesForRelationshipAnalysis: string[] = [];
     const fileName = selectedFile.name;
     const fileType = selectedFile.type.toLowerCase();
+    const isTextBased = fileType === "text/csv" || fileType === "text/plain" || fileName.endsWith(".txt") || fileName.endsWith(".csv");
 
     try {
-      if (fileType === "text/csv" || fileType === "text/plain" || fileName.endsWith(".txt") || fileName.endsWith(".csv")) {
+      if (isTextBased) {
         setProgress(20);
         setProcessingMessage(`Lendo e interpretando arquivo de texto/CSV: ${fileName}...`);
         const textContent = await selectedFile.text();
@@ -172,13 +182,15 @@ function LinkAnalysisContent() {
         setProgress(40);
         if (entitiesForRelationshipAnalysis.length === 0) {
           setProcessingMessage(`Nenhuma entidade específica encontrada por interpretação local em '${fileName}'. Enviando conteúdo completo para IA...`);
+          // Send a significant chunk, but not excessively large, to avoid overwhelming the AI or hitting limits.
           entitiesForRelationshipAnalysis = [textContent.substring(0, 50000)]; 
         } else {
           setProcessingMessage(`Entidades extraídas localmente: ${entitiesForRelationshipAnalysis.length}. Enviando para IA...`);
         }
       } else { 
+        // For non-text files (PDF, DOCX, XLSX etc.), attempt extraction via analyzeDocument
         setProgress(10);
-        setProcessingMessage(`Preparando arquivo '${fileName}' para extração de conteúdo pela IA...`);
+        setProcessingMessage(`Preparando arquivo '${fileName}' para extração de conteúdo pela IA (pode levar um momento)...`);
         
         const fileDataUri = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
@@ -189,7 +201,7 @@ function LinkAnalysisContent() {
         if (!fileDataUri) throw new Error("Não foi possível ler o conteúdo do arquivo como Data URI.");
 
         setProgress(30);
-        setProcessingMessage(`Extraindo texto e entidades primárias de '${fileName}' com IA (pode levar um momento)...`);
+        setProcessingMessage(`Tentando extrair texto de '${fileName}' com IA de documentos...`);
         const docInput: AnalyzeDocumentInput = { fileDataUri, fileName };
         
         const docResult: AnalyzeDocumentOutput = await analyzeDocument(docInput);
@@ -199,28 +211,36 @@ function LinkAnalysisContent() {
             if (docResult.keyEntities && docResult.keyEntities.length > 0) {
                 entitiesForRelationshipAnalysis.push(...docResult.keyEntities.map(ke => `${ke.type}: ${ke.value}`));
             }
-            entitiesForRelationshipAnalysis = Array.from(new Set(entitiesForRelationshipAnalysis.filter(e => e && e.trim() !== "" && e.length < 250)));
-            toast({ title: "Extração de Conteúdo do Arquivo Concluída", description: `Texto e entidades primárias extraídos de '${fileName}'.` });
+            // Remove duplicates and ensure entities are reasonable
+            entitiesForRelationshipAnalysis = Array.from(new Set(entitiesForRelationshipAnalysis.filter(e => e && e.trim() !== "" && e.length < 250 && e.length > 1)));
+            toast({ title: "Extração de Conteúdo Concluída", description: `Texto e entidades primárias extraídos de '${fileName}'. Analisando vínculos...` });
+            setProcessingMessage(`Texto extraído. ${entitiesForRelationshipAnalysis.length} potenciais entidades/fragmentos de texto para análise de vínculos...`);
         } else {
+            const limitedExtractionMessage = docResult.summary || `O conteúdo de '${fileName}' (${fileType || 'tipo desconhecido'}) não pôde ser lido/extraído diretamente pela IA de documentos. A análise de vínculos prosseguirá com base nos metadados e no tipo de arquivo. Para arquivos complexos como XLSX, DOCX, considere converter para TXT ou CSV para melhor extração de conteúdo.`;
+            setProcessingMessage(limitedExtractionMessage.substring(0, 200) + "...");
              toast({ 
                 variant: "default", 
-                title: "Extração de Conteúdo do Arquivo Limitada", 
-                description: docResult.summary || `O conteúdo de '${fileName}' não pôde ser lido/extraído diretamente pela IA de documentos. A análise de vínculos prosseguirá com base nos metadados (nome, tipo).`,
-                duration: 8000
+                title: "Extração de Conteúdo Limitada", 
+                description: limitedExtractionMessage,
+                duration: 10000 
             });
             entitiesForRelationshipAnalysis.push(fileName);
             if (selectedFile.type) entitiesForRelationshipAnalysis.push(selectedFile.type);
+            if (docResult.summary) entitiesForRelationshipAnalysis.push(docResult.summary); // Add the system summary for context
         }
       }
 
       setProgress(60);
       if (entitiesForRelationshipAnalysis.length === 0) {
+         // This case should be rare now with the fallbacks
          entitiesForRelationshipAnalysis.push(selectedFile.name); 
          if(selectedFile.type) entitiesForRelationshipAnalysis.push(selectedFile.type);
-         toast({ variant: "default", title: "Nenhuma Entidade Específica Encontrada", description: `A análise de vínculos prosseguirá com base no nome/tipo do arquivo: '${selectedFile.name}'.` });
+         const fallbackMsg = `Nenhuma entidade específica extraída de '${selectedFile.name}'. A análise de vínculos prosseguirá com base no nome e tipo do arquivo.`;
+         setProcessingMessage(fallbackMsg);
+         toast({ variant: "default", title: "Nenhuma Entidade Específica Encontrada", description: fallbackMsg });
+      } else {
+         setProcessingMessage(`Analisando ${entitiesForRelationshipAnalysis.length} potenciais entidades/fragmentos de texto com IA (Contexto: ${analysisContext})...`);
       }
-      
-      setProcessingMessage(`Analisando ${entitiesForRelationshipAnalysis.length} potenciais entidades/fragmentos de texto com IA (Contexto: ${analysisContext})...`);
       
       const relationshipInput: FindEntityRelationshipsInput = { 
         entities: entitiesForRelationshipAnalysis, 
@@ -243,6 +263,7 @@ function LinkAnalysisContent() {
       const errorMessage = error instanceof Error ? error.message : "Ocorreu um erro desconhecido.";
       setProcessingMessage(`Falha na análise: ${errorMessage.substring(0,100)}...`);
       toast({ variant: "destructive", title: "Falha na Análise de Vínculos", description: errorMessage, duration: 10000 });
+      setProgress(0); // Reset progress on error
     } finally {
       setIsLoading(false); 
     }
@@ -293,6 +314,7 @@ function LinkAnalysisContent() {
           <CardTitle>Enviar Arquivo para Análise de Vínculos</CardTitle>
           <CardDescription>
             Forneça um arquivo (TXT, CSV, PDF, DOCX, XLSX). A IA tentará extrair entidades e relações.
+             Para arquivos como XLSX, DOCX e PDF complexos (especialmente os baseados em imagem), a extração de conteúdo pode ser limitada; converter para TXT ou CSV pode gerar melhores resultados.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -359,7 +381,7 @@ function LinkAnalysisContent() {
         <AlertDescription>
           <ul className="list-disc list-inside text-xs space-y-1">
             <li>Para arquivos <strong>TXT/CSV</strong>: idealmente, cada linha ou célula deve conter uma entidade clara. A IA tentará interpretar e identificar entidades.</li>
-            <li>Para <strong>PDF, DOCX, XLSX</strong>: a IA extrairá o texto e depois tentará identificar entidades e relações. Documentos complexos ou baseados em imagem podem ter limitações.</li>
+            <li>Para <strong>PDF, DOCX, XLSX</strong>: a IA extrairá o texto e depois tentará identificar entidades e relações. Documentos complexos ou baseados em imagem podem ter limitações na extração de conteúdo. Considere converter para TXT ou CSV se a extração de conteúdo não for satisfatória.</li>
             <li>Selecionar um <strong>Contexto da Análise</strong> específico ajuda a IA a focar e aprimorar a identificação de entidades e relações.</li>
             <li>Se a extração de entidades do conteúdo falhar, a análise de vínculos usará o nome do arquivo e tipo MIME como entidades base.</li>
             <li>O grafo gerado é uma representação visual das inferências da IA. Verifique e cruze com outras fontes.</li>
@@ -392,7 +414,7 @@ function LinkAnalysisContent() {
                 <p className="text-muted-foreground text-center font-semibold">Nenhuma entidade identificada para visualização.</p>
                 <p className="text-xs text-muted-foreground mt-1 text-center">
                   Verifique o "Resumo da Análise de Inteligência" acima para mais detalhes.
-                  O arquivo pode não conter dados textuais claros ou as entidades podem não ter sido reconhecidas.
+                  O arquivo pode não conter dados textuais claros, as entidades podem não ter sido reconhecidas, ou a extração de conteúdo pode ter sido limitada.
                 </p>
             </CardContent>
         </Card>
@@ -406,5 +428,5 @@ export default function LinkAnalysisPage() {
     <Suspense fallback={<div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Carregando...</p></div>}>
       <LinkAnalysisContent />
     </Suspense>
-  )
+  );
 }

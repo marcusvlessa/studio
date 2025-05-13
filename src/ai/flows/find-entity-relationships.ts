@@ -86,7 +86,7 @@ const prompt = ai.definePrompt({
   prompt: `Você é um especialista em análise de inteligência e construção de grafos de vínculos, modelado a partir das capacidades do IBM i2 Analyst's Notebook. Sua tarefa é analisar uma lista de entidades de entrada, identificar entidades distintas, classificá-las e, o mais importante, inferir e descrever os relacionamentos entre elas, incluindo a criação de novas entidades implícitas se necessário (como eventos ou transações que conectam outras entidades).
 
 **Contexto da Análise:** {{{analysisContext}}}
-{{#if fileOrigin}}Arquivo de Origem dos Dados: {{{fileOrigin}}}{{#endif}}
+{{#if fileOrigin}}Arquivo de Origem dos Dados: {{{fileOrigin}}}{{/if}}
 
 **Entidades Brutas Fornecidas para Análise (pré-processadas ou extraídas de um arquivo):**
 {{#if entities.length}}

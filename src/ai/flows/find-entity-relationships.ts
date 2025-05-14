@@ -15,7 +15,7 @@ const EntitySchema = z.object({
   id: z.string().describe('Um ID único e SIMPLES para esta entidade (ex: "ent_1", "pessoa_joao_silva", "org_xpto_ltda"). Use apenas letras, números e underscores. ESTE ID, E SOMENTE ESTE ID, DEVE SER USADO nos campos "source" e "target" dos relacionamentos. NÃO use o label da entidade diretamente como ID nos relacionamentos; use este campo "id" que você está gerando aqui.'),
   label: z.string().describe('O valor ou nome da entidade (ex: João Silva, Empresa XYZ Ltda, (XX) XXXXX-XXXX).'),
   type: z.string().describe('O tipo inferido da entidade (ex: Pessoa, Organização, Localização, Telefone, Email, IP, Veículo, Evento, Transação Financeira, Documento, Website, Chave PIX, IMEI, ERB, Conta Bancária, Arma de Fogo, Outros). Seja o mais específico possível.'),
-  properties: z.string().optional().default("{}").describe('Uma STRING JSON VÁLIDA representando propriedades adicionais da entidade (ex: para Pessoa "{\"CPF\": \"XXX.XXX.XXX-XX\", \"RG\": \"12.345.678-9\", \"Nascimento_texto\": \"DD/MM/AAAA\"}"). Os valores dentro do JSON devem ser strings. Se não houver propriedades, envie uma string JSON vazia como "{}" ou omita o campo.')
+  properties: z.record(z.string()).optional().default({}).describe('Um objeto JSON representando propriedades adicionais da entidade (ex: para Pessoa {"CPF": "XXX.XXX.XXX-XX", "RG": "12.345.678-9", "Nascimento_texto": "DD/MM/AAAA"}). Os valores dentro do JSON devem ser strings. Se não houver propriedades, envie um objeto JSON vazio como {} ou omita o campo.')
 });
 
 const RelationshipSchema = z.object({
@@ -25,7 +25,7 @@ const RelationshipSchema = z.object({
   type: z.string().optional().describe('Um tipo categorizado de relacionamento (ex: Comunicação, Financeiro, Familiar, Profissional, Geográfico, Técnico, Posse, Social, Metadado).'),
   direction: z.enum(["direcional", "bidirecional", "nao_direcional"]).optional().default("nao_direcional").describe("A direcionalidade do relacionamento. 'direcional' de source para target, 'bidirecional' para ambos, 'nao_direcional' para associação sem direção clara."),
   strength: z.number().min(0).max(1).optional().describe('Força estimada ou confiança do relacionamento (0 a 1), se aplicável.'),
-  properties: z.string().optional().default("{}").describe('Uma STRING JSON VÁLIDA representando propriedades adicionais do relacionamento (ex: "{\"data_hora\": \"DD/MM/AAAA HH:MM\", \"valor_texto\": \"R$ XXX,XX\", \"frequencia_texto\": \"3 vezes\"}"). Os valores dentro do JSON devem ser strings. Se não houver, envie "{}" ou omita o campo.')
+  properties: z.record(z.string()).optional().default({}).describe('Um objeto JSON representando propriedades adicionais do relacionamento (ex: {"data_hora": "DD/MM/AAAA HH:MM", "valor_texto": "R$ XXX,XX", "frequencia_texto": "3 vezes"}). Os valores dentro do JSON devem ser strings. Se não houver, envie {} ou omita o campo.')
 });
 
 const FindEntityRelationshipsInputSchema = z.object({
@@ -41,27 +41,13 @@ const FindEntityRelationshipsInputSchema = z.object({
 });
 export type FindEntityRelationshipsInput = z.infer<typeof FindEntityRelationshipsInputSchema>;
 
-// Final schemas for output where properties are parsed JSON objects
-const FinalEntitySchema = EntitySchema.omit({ properties: true }).extend({
-    properties: z.record(z.string()).optional().default({})
-});
-const FinalRelationshipSchema = RelationshipSchema.omit({ properties: true }).extend({
-    properties: z.record(z.string()).optional().default({})
-});
-
+// Schema for the prompt's direct output, where properties are expected as objects already
 const FindEntityRelationshipsOutputSchema = z.object({
-  identifiedEntities: z.array(FinalEntitySchema).describe("Lista de todas as entidades únicas identificadas e classificadas pela IA a partir da entrada, com IDs únicos para ReactFlow."),
-  relationships: z.array(FinalRelationshipSchema).describe('Uma lista de relacionamentos identificados entre as entidades, usando os IDs únicos de ReactFlow.'),
+  identifiedEntities: z.array(EntitySchema).describe("Lista de todas as entidades únicas identificadas e classificadas pela IA a partir da entrada, com IDs únicos para ReactFlow."),
+  relationships: z.array(RelationshipSchema).describe('Uma lista de relacionamentos identificados entre as entidades, usando os IDs únicos de ReactFlow.'),
   analysisSummary: z.string().optional().describe("Um resumo textual conciso da análise de vínculos realizada pela IA, destacando os achados mais importantes, padrões observados, entidades centrais, ou dificuldades encontradas (como impossibilidade de ler conteúdo de arquivo). Deve ser redigido em linguagem clara e investigativa.")
 });
 export type FindEntityRelationshipsOutput = z.infer<typeof FindEntityRelationshipsOutputSchema>;
-
-// Schema for the prompt's direct output (with JSON strings for properties)
-const PromptOutputSchema = z.object({
-    identifiedEntities: z.array(EntitySchema).describe("Lista de todas as entidades únicas identificadas e classificadas pela IA a partir da entrada."),
-    relationships: z.array(RelationshipSchema).describe('Uma lista de relacionamentos identificados entre as entidades.'),
-    analysisSummary: z.string().optional().describe("Resumo textual da análise de vínculos.")
-});
 
 
 export async function findEntityRelationships(
@@ -80,11 +66,11 @@ export async function findEntityRelationships(
 const prompt = ai.definePrompt({
   name: 'findEntityRelationshipsPrompt',
   input: {schema: FindEntityRelationshipsInputSchema},
-  output: {schema: PromptOutputSchema}, 
+  output: {schema: FindEntityRelationshipsOutputSchema}, 
   prompt: `Você é um especialista em análise de inteligência e construção de grafos de vínculos, modelado a partir das capacidades do IBM i2 Analyst's Notebook. Sua tarefa é analisar uma lista de 'Entidades Brutas' fornecidas, identificar entidades distintas, classificá-las e, o mais importante, inferir e descrever os relacionamentos entre elas. Se necessário, crie entidades implícitas (como Eventos ou Transações) para conectar outras entidades de forma significativa.
 
 **Contexto da Análise:** {{{analysisContext}}}
-{{#if fileOrigin}}Arquivo de Origem dos Dados: {{{fileOrigin}}}{{#endif}}
+{{#if fileOrigin}}Arquivo de Origem dos Dados: {{{fileOrigin}}}{{/if}}
 
 **Entidades Brutas Fornecidas para Análise (podem ser texto extraído de um arquivo, incluindo linhas de tabela, ou metadados de arquivo como nome e tipo):**
 {{#if entities.length}}
@@ -104,39 +90,39 @@ const prompt = ai.definePrompt({
         *   **ID da Entidade (Campo 'id'):** Atribua um ID único e SIMPLES para esta entidade (ex: "ent_1", "pessoa_joao_silva", "org_xpto_ltda", "tel_5511999998888"). **Este ID DEVE SER uma string não vazia, composta apenas por letras minúsculas, números e underscores ('_').** Este ID é CRUCIAL e DEVE ser usado EXATAMENTE IGUAL nos campos 'source' e 'target' dos relacionamentos. NÃO use o label da entidade diretamente como ID nos relacionamentos; use este campo 'id' que você está gerando aqui.
         *   **Label da Entidade (Campo 'label'):** O valor textual da entidade como ela aparece nos dados ou como foi inferida (ex: João Silva, Empresa XYZ Ltda, (51) 99999-8888, 192.168.1.100).
         *   **Tipo da Entidade (Campo 'type'):** Classifique com um 'type' o mais específico possível, usando os tipos PRIMÁRIOS listados abaixo e refinando quando possível. Priorize a especificidade conforme o 'analysisContext'.
-            *   **Pessoa:** (Ex: João Silva). Propriedades: "{\"CPF\": \"XXX.XXX.XXX-XX\", \"RG\": \"XX.XXX.XXX-X\", \"Nascimento_texto\": \"DD/MM/AAAA\", \"Apelido\": \"Zé\"}".
-            *   **Organização:** (Ex: Empresa XYZ Ltda, Polícia Civil, Facção Os Manos). Propriedades: "{\"CNPJ\": \"XX.XXX.XXX/XXXX-XX\", \"Tipo\": \"ONG\", \"Ramo_Atividade\": \"Comércio\"}".
-            *   **Localização:** (Ex: Rua Principal 123, Porto Alegre; Coordenada GEO: -30.03, -51.21). Propriedades: "{\"CEP\": \"XXXXX-XXX\", \"Cidade\": \"Nome Cidade\", \"País\": \"Brasil\"}".
-            *   **Telefone:** (Ex: (51) 99999-8888, 5511988887777). Propriedades: "{\"Operadora\": \"Vivo\", \"TipoLinha\": \"Celular\", \"IMEI_associado\": \"id_do_imei_correspondente_se_identificado\"}".
+            *   **Pessoa:** (Ex: João Silva). Propriedades: {"CPF": "XXX.XXX.XXX-XX", "RG": "XX.XXX.XXX-X", "Nascimento_texto": "DD/MM/AAAA", "Apelido": "Zé"}.
+            *   **Organização:** (Ex: Empresa XYZ Ltda, Polícia Civil, Facção Os Manos). Propriedades: {"CNPJ": "XX.XXX.XXX/XXXX-XX", "Tipo": "ONG", "Ramo_Atividade": "Comércio"}.
+            *   **Localização:** (Ex: Rua Principal 123, Porto Alegre; Coordenada GEO: -30.03, -51.21). Propriedades: {"CEP": "XXXXX-XXX", "Cidade": "Nome Cidade", "País": "Brasil"}.
+            *   **Telefone:** (Ex: (51) 99999-8888, 5511988887777). Propriedades: {"Operadora": "Vivo", "TipoLinha": "Celular", "IMEI_associado": "id_do_imei_correspondente_se_identificado"}.
             *   **Email:** (Ex: usuario@dominio.com).
-            *   **Endereço IP:** (Ex: 192.168.1.100). Propriedades: "{\"Provedor\": \"Nome Provedor\", \"GeolocalizacaoIP_texto\": \"Cidade, País\", \"TipoIP\": \"IPv4\"}".
-            *   **Veículo:** (Ex: Placa XXX-0000, IXX1A23). Propriedades: "{\"Marca\": \"Ford\", \"Modelo\": \"Fiesta\", \"Cor\": \"Preto\", \"Chassi_texto\": \"YYYYYYYYY\", \"RENAVAM_texto\": \"ZZZZZZZZZ\"}".
-            *   **Evento/Incidente:** (Ex: Assalto Banco X em DD/MM/AA, Homicídio Vítima Y). Propriedades: "{\"DataHora_texto\": \"DD/MM/AAAA HH:MM\", \"TipoCrime_texto\": \"Roubo\", \"Local_ID\": \"id_da_localizacao_do_evento\"}". *PODE SER CRIADO PELA IA para conectar outras entidades.*
-            *   **Transação Financeira:** (Ex: PIX R$1000 ContaA para ContaB). Propriedades: "{\"Valor_texto\": \"R$1000,00\", \"DataHora_texto\": \"DD/MM/AAAA HH:MM\", \"TipoTransacao\": \"PIX\", \"OrigemID\": \"id_da_entidade_origem\", \"DestinoID\": \"id_da_entidade_destino\", \"Status\": \"Confirmada\"}". *PODE SER CRIADO PELA IA.*
-            *   **Documento (Referência):** (Ex: Contrato Nº ZZZ, Relatório RIF_001, {{{fileOrigin}}}). Se a entidade for o próprio arquivo de origem, use o nome do arquivo como label. Propriedades: "{\"TipoDocumento\": \"Contrato\", \"DataCriacao_texto\": \"DD/MM/AAAA\", \"NomeOriginal_texto\": \"{{{fileOrigin}}}\", \"TipoMIME_texto\": \"application/pdf\"}".
-            *   **Website/URL:** (Ex: https://www.exemplo.com/pagina_suspeita). Propriedades: "{\"Dominio\": \"exemplo.com\", \"Status\": \"Ativo\"}".
-            *   **Chave PIX:** (Ex: CPF:XXX.XXX.XXX-XX, CNPJ:XX.XXX.XXX/XXXX-XX, Email:pix@ex.com, Telefone:(XX)XXXXX-XXXX, ChaveAleatoria:abc-123). Relacionar à Pessoa/Organização dona se identificável. Propriedades: "{\"TipoChave\": \"CPF\", \"AssociadaA_ID\": \"id_da_pessoa_ou_organizacao_dona_da_chave\"}".
-            *   **IMEI:** (Ex: 35XXXXXXXXXXXXX). Relacionar a entidades Telefone, se possível. Propriedades: "{\"Fabricante\": \"Samsung\", \"ModeloAparelho\": \"Galaxy S20\"}".
-            *   **ERB (Estação Rádio Base):** (Ex: ERB-12345_TORRE_CENTRO). Propriedades: "{\"LocalizacaoERB_texto\": \"Endereço ou Coordenada da ERB\", \"Operadora\": \"Claro\"}".
-            *   **Conta Bancária:** (Ex: Ag:0001 C:12345-6 Banco X). Propriedades: "{\"Banco\": \"Nome Banco\", \"Agencia_texto\": \"0001\", \"Conta_texto\": \"12345-6\", \"TitularID\": \"id_da_pessoa_ou_organizacao_titular\"}".
-            *   **Arma de Fogo:** (Ex: Pistola Taurus G2C Cal.9mm). Propriedades: "{\"NumeroSerie_texto\": \"XXXXX\", \"Calibre_texto\": \".9mm\", \"TipoArma\": \"Pistola\"}".
+            *   **Endereço IP:** (Ex: 192.168.1.100). Propriedades: {"Provedor": "Nome Provedor", "GeolocalizacaoIP_texto": "Cidade, País", "TipoIP": "IPv4"}.
+            *   **Veículo:** (Ex: Placa XXX-0000, IXX1A23). Propriedades: {"Marca": "Ford", "Modelo": "Fiesta", "Cor": "Preto", "Chassi_texto": "YYYYYYYYY", "RENAVAM_texto": "ZZZZZZZZZ"}.
+            *   **Evento/Incidente:** (Ex: Assalto Banco X em DD/MM/AA, Homicídio Vítima Y). Propriedades: {"DataHora_texto": "DD/MM/AAAA HH:MM", "TipoCrime_texto": "Roubo", "Local_ID": "id_da_localizacao_do_evento"}. *PODE SER CRIADO PELA IA para conectar outras entidades.*
+            *   **Transação Financeira:** (Ex: PIX R$1000 ContaA para ContaB). Propriedades: {"Valor_texto": "R$1000,00", "DataHora_texto": "DD/MM/AAAA HH:MM", "TipoTransacao": "PIX", "OrigemID": "id_da_entidade_origem", "DestinoID": "id_da_entidade_destino", "Status": "Confirmada"}. *PODE SER CRIADO PELA IA.*
+            *   **Documento (Referência):** (Ex: Contrato Nº ZZZ, Relatório RIF_001, {{{fileOrigin}}}). Se a entidade for o próprio arquivo de origem, use o nome do arquivo como label. Propriedades: {"TipoDocumento": "Contrato", "DataCriacao_texto": "DD/MM/AAAA", "NomeOriginal_texto": "{{{fileOrigin}}}", "TipoMIME_texto": "application/pdf"}.
+            *   **Website/URL:** (Ex: https://www.exemplo.com/pagina_suspeita). Propriedades: {"Dominio": "exemplo.com", "Status": "Ativo"}.
+            *   **Chave PIX:** (Ex: CPF:XXX.XXX.XXX-XX, CNPJ:XX.XXX.XXX/XXXX-XX, Email:pix@ex.com, Telefone:(XX)XXXXX-XXXX, ChaveAleatoria:abc-123). Relacionar à Pessoa/Organização dona se identificável. Propriedades: {"TipoChave": "CPF", "AssociadaA_ID": "id_da_pessoa_ou_organizacao_dona_da_chave"}.
+            *   **IMEI:** (Ex: 35XXXXXXXXXXXXX). Relacionar a entidades Telefone, se possível. Propriedades: {"Fabricante": "Samsung", "ModeloAparelho": "Galaxy S20"}.
+            *   **ERB (Estação Rádio Base):** (Ex: ERB-12345_TORRE_CENTRO). Propriedades: {"LocalizacaoERB_texto": "Endereço ou Coordenada da ERB", "Operadora": "Claro"}.
+            *   **Conta Bancária:** (Ex: Ag:0001 C:12345-6 Banco X). Propriedades: {"Banco": "Nome Banco", "Agencia_texto": "0001", "Conta_texto": "12345-6", "TitularID": "id_da_pessoa_ou_organizacao_titular"}.
+            *   **Arma de Fogo:** (Ex: Pistola Taurus G2C Cal.9mm). Propriedades: {"NumeroSerie_texto": "XXXXX", "Calibre_texto": ".9mm", "TipoArma": "Pistola"}.
             *   **Nome de Arquivo:** (Ex: {{{fileOrigin}}}). Usar se o próprio arquivo é uma entidade central na análise de metadados.
             *   **Tipo de Arquivo:** (Ex: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet). Se uma das entidades brutas for um tipo MIME, identifique-a como tal.
             *   **Outros:** Para entidades que não se encaixam acima, seja específico (ex: "Produto Químico", "Droga", "Apelido").
     *   **Dados Tabulares:** Se uma 'Entidade Bruta' parecer ser uma linha de dados tabulares (ex: "João Silva,(XX)XXXXX-XXXX,XXX.XXX.XXX-XX"), decomponha-a em múltiplas entidades (Pessoa "João Silva", Telefone "(XX)XXXXX-XXXX", Documento "CPF XXX.XXX.XXX-XX") CADA UMA COM SEU PRÓPRIO 'id' ÚNICO (seguindo as regras de ID simples), e INFERA relacionamentos entre elas (ex: João Silva "possui" Telefone, João Silva "possui" CPF).
-    *   **Propriedades (Campo 'properties'):** Para CADA entidade e relacionamento, SEMPRE forneça uma STRING JSON VÁLIDA (ex: "{\"CPF\": \"123.456.789-00\", \"Status\": \"Ativo\"}"). Os valores dentro do JSON devem ser strings. Se NÃO HOUVER propriedades, envie uma string JSON vazia como "{}" ou omita o campo (o schema de output tem default "{}" para isso).
+    *   **Propriedades (Campo 'properties'):** Para CADA entidade e relacionamento, SEMPRE forneça um objeto JSON (ex: {"CPF": "123.456.789-00", "Status": "Ativo"}). Os valores dentro do JSON devem ser strings. Se NÃO HOUVER propriedades, envie um objeto JSON vazio como {} ou omita o campo (o schema de output tem default {} para isso).
 
 2.  **Inferência e Descrição de Relacionamentos (Campo: relationships):**
     *   Identifique relacionamentos DIRETOS e INDIRETOS (através de entidades intermediárias como Eventos ou Transações) entre as identifiedEntities.
     *   Para CADA relacionamento:
-        *   'source' e 'target': **IMPERATIVO E ABSOLUTAMENTE ESSENCIAL:** Use os IDs EXATOS das entidades de origem/destino conforme definidos por VOCÊ no campo 'id' da lista \`identifiedEntities\`. O valor de 'source' e 'target' aqui DEVE ser IDÊNTICO ao valor do campo 'id' da entidade correspondente. Não use labels, não use variações, use o ID exato.
+        *   'source' e 'target': **IMPERATIVO E ABSOLUTAMENTE ESSENCIAL:** Use os IDs EXATOS das entidades de origem/destino conforme definidos por VOCÊ no campo 'id' da lista identifiedEntities. O valor de 'source' e 'target' aqui DEVE ser IDÊNTICO ao valor do campo 'id' da entidade correspondente. Não use labels, não use variações, use o ID exato.
         *   'label': Descrição textual concisa do relacionamento (Ex: "Comunicou com (Telefone)", "Transferiu R$X para (PIX)", "Reside em (Endereço)", "Proprietário de (Veículo)", "Utilizou ERB (Telefone)", "É do tipo (Metadado)", "Membro de (Organização)"). Seja específico, indicando o tipo de relação se ajudar.
         *   'type': (Opcional) Categorize (Ex: Comunicação, Financeiro, Familiar, Profissional, Propriedade, Localização, Técnico, Participação em Evento, Social, Metadado).
         *   'direction': (Opcional) "direcional", "bidirecional", ou "nao_direcional". Se "direcional", indique o fluxo (ex: de source para target).
         *   'strength': (Opcional) Confiança (0.0 a 1.0).
-        *   'properties': (Opcional) STRING JSON VÁLIDA com detalhes (Ex: "{\"data_hora_inicio_texto\": \"DD/MM/AAAA HH:MM\", \"duracao_segundos_texto\": \"120\", \"valor_transferido_texto\": \"R$ 500,00\"}"). Se NÃO HOUVER, omita ou envie "{}".
+        *   'properties': (Opcional) Objeto JSON com detalhes (Ex: {"data_hora_inicio_texto": "DD/MM/AAAA HH:MM", "duracao_segundos_texto": "120", "valor_transferido_texto": "R$ 500,00"}). Se NÃO HOUVER, omita ou envie {}.
 
-3.  **Criação de Entidades Implícitas:** Se, por exemplo, Pessoa A e Pessoa B são mencionadas em conexão com um "assalto dia X", crie uma entidade 'Evento/Incidente' "Assalto Dia X" (com seu próprio ID único, ex: "evento_assalto_dia_x", seguindo as regras de ID simples), e relacione Pessoa A (usando seu ID) e Pessoa B (usando seu ID) a este evento (ex: Pessoa A "participou de" evento_assalto_dia_x). Certifique-se de que esta entidade implícita também esteja listada em \`identifiedEntities\`.
+3.  **Criação de Entidades Implícitas:** Se, por exemplo, Pessoa A e Pessoa B são mencionadas em conexão com um "assalto dia X", crie uma entidade 'Evento/Incidente' "Assalto Dia X" (com seu próprio ID único, ex: "evento_assalto_dia_x", seguindo as regras de ID simples), e relacione Pessoa A (usando seu ID) e Pessoa B (usando seu ID) a este evento (ex: Pessoa A "participou de" evento_assalto_dia_x). Certifique-se de que esta entidade implícita também esteja listada em identifiedEntities.
 
 4.  **Resumo da Análise (Campo: analysisSummary):**
     *   Forneça um resumo textual conciso (2-5 parágrafos) da análise de vínculos.
@@ -146,7 +132,7 @@ const prompt = ai.definePrompt({
 
 Se a lista de 'Entidades Brutas' for pequena ou muito genérica, faça o melhor possível para extrair significado e indique no 'analysisSummary' as limitações.
 Foco na QUALIDADE e ESPECIFICIDADE dos tipos de entidade e na CLAREZA das descrições dos relacionamentos.
-**REITERAÇÃO CRUCIAL E FINAL:** A consistência dos IDs é FUNDAMENTAL. O ID que você define para uma entidade no campo 'id' da lista \`identifiedEntities\` DEVE SER EXATAMENTE O MESMO ID usado nos campos 'source' ou 'target' de QUALQUER relacionamento que envolva essa entidade. Qualquer pequena variação (maiúscula/minúscula, espaço extra, caractere diferente) fará com que o vínculo não seja visualizado corretamente.
+**REITERAÇÃO CRUCIAL E FINAL:** A consistência dos IDs é FUNDAMENTAL. O ID que você define para uma entidade no campo 'id' da lista identifiedEntities DEVE SER EXATAMENTE O MESMO ID usado nos campos 'source' ou 'target' de QUALQUER relacionamento que envolva essa entidade. Qualquer pequena variação (maiúscula/minúscula, espaço extra, caractere diferente) fará com que o vínculo não seja visualizado corretamente.
 `,
 });
 
@@ -176,7 +162,7 @@ const findEntityRelationshipsFlow = ai.defineFlow(
       entities: processedEntitiesInput
     };
 
-    const {output: rawOutput} = await prompt(promptInput); // rawOutput contains properties as JSON strings
+    const {output: rawOutput} = await prompt(promptInput);
     if (!rawOutput) {
       console.error("Análise de vínculos: A IA não retornou um resultado válido.");
       return {
@@ -194,7 +180,6 @@ const findEntityRelationshipsFlow = ai.defineFlow(
     const parsedIdentifiedEntities: FindEntityRelationshipsOutput['identifiedEntities'] = rawOutput.identifiedEntities
       .filter(entity => !(entity.label.startsWith("AVISO DO SISTEMA:") || entity.label.startsWith("Impossibilidade de análise"))) 
       .map((entity, idx) => {
-        // Ensure entity.id is a non-empty string, otherwise generate a fallback for aiOriginalId right away.
         const aiProvidedId = (typeof entity.id === 'string' && entity.id.trim() !== "") ? entity.id.trim() : null;
         const aiOriginalId = aiProvidedId || `entidade_sem_id_original_ia_${entityFlowCounter++}_${entity.label.substring(0,10).replace(/[^a-zA-Z0-9_]/g, '')}`;
 
@@ -202,7 +187,6 @@ const findEntityRelationshipsFlow = ai.defineFlow(
             console.warn(`[findEntityRelationshipsFlow] Entidade da IA (Label: ${entity.label}, Index: ${idx}) veio SEM ID ou com ID VAZIO! Usando ID de fallback para mapeamento: ${aiOriginalId}. O prompt da IA DEVE fornecer um 'id' válido para cada 'identifiedEntities'.`);
         }
         
-        // Sanitize the aiOriginalId for ReactFlow usage
         let baseReactFlowId = aiOriginalId.replace(/[^a-zA-Z0-9_]/g, '_').substring(0, 50);
         if (baseReactFlowId.length === 0 || /^\\W+$/.test(baseReactFlowId) || baseReactFlowId.startsWith('_')) { 
             baseReactFlowId = `entidade_gerada_${entityFlowCounter++}`;
@@ -215,28 +199,11 @@ const findEntityRelationshipsFlow = ai.defineFlow(
         }
         reactFlowIdUsageMap.set(baseReactFlowId, count + 1);
       
-        aiEntityIdToReactFlowIdMap.set(aiOriginalId, finalReactFlowId); // Map original (or its fallback) to final clean ID
+        aiEntityIdToReactFlowIdMap.set(aiOriginalId, finalReactFlowId);
 
-        let parsedProperties: Record<string, string> = {};
-        if (typeof entity.properties === 'string' && entity.properties.trim() !== "" && entity.properties.trim() !== "{}") {
-          try {
-            const parsed = JSON.parse(entity.properties);
-            if (typeof parsed === 'object' && parsed !== null) {
-              for (const key in parsed) {
-                if (Object.prototype.hasOwnProperty.call(parsed, key)) {
-                  parsedProperties[key] = String(parsed[key]); 
-                }
-              }
-            } else {
-               console.warn(`[findEntityRelationshipsFlow] Propriedades da entidade '${entity.label}' (ID IA Original: ${aiOriginalId}) não é um objeto JSON válido: ${entity.properties}`);
-            }
-          } catch (e) {
-            console.warn(`[findEntityRelationshipsFlow] Falha ao parsear JSON das propriedades para entidade '${entity.label}' (ID IA Original: ${aiOriginalId}): ${entity.properties}`, e);
-            if (entity.properties.trim() !== "{}") {
-                parsedProperties["propriedades_brutas"] = entity.properties;
-            }
-          }
-        }
+        // Properties are already objects in rawOutput due to updated PromptOutputSchema
+        const parsedProperties = entity.properties || {};
+
         return { ...entity, id: finalReactFlowId, properties: parsedProperties }; 
     });
     
@@ -266,35 +233,15 @@ const findEntityRelationshipsFlow = ai.defineFlow(
             return null;
         }
         
-        let parsedRelProperties: Record<string, string> = {};
-         if (typeof rel.properties === 'string' && rel.properties.trim() !== "" && rel.properties.trim() !== "{}") {
-            try {
-                const parsed = JSON.parse(rel.properties);
-                if (typeof parsed === 'object' && parsed !== null) {
-                    for (const key in parsed) {
-                        if (Object.prototype.hasOwnProperty.call(parsed, key)) {
-                           parsedRelProperties[key] = String(parsed[key]);
-                        }
-                    }
-                } else {
-                     console.warn(`[findEntityRelationshipsFlow] Propriedades do relacionamento '${rel.label}' não é um objeto JSON válido: ${rel.properties}`);
-                }
-            } catch (e) {
-                console.warn(`[findEntityRelationshipsFlow] Falha ao parsear JSON das propriedades para relacionamento '${rel.label}': ${rel.properties}`, e);
-                 if (rel.properties.trim() !== "{}") {
-                    parsedRelProperties["propriedades_brutas"] = rel.properties;
-                }
-            }
-        }
+        // Properties are already objects in rawOutput
+        const parsedRelProperties = rel.properties || {};
         
         return {
-            id: `edge-${index}-${reactFlowSourceId}-${reactFlowTargetId}`, 
+            // id: `edge-${index}-${reactFlowSourceId}-${reactFlowTargetId}`, // Ensure unique edge IDs
+            ...rel, // Spread the original relationship to keep all its fields like type, direction, strength
+            id: rel.id || `edge-${index}-${reactFlowSourceId}-${reactFlowTargetId}`, // Use AI provided ID or generate one
             source: reactFlowSourceId,
             target: reactFlowTargetId,
-            label: rel.label,
-            type: rel.type,
-            direction: rel.direction,
-            strength: rel.strength,
             properties: parsedRelProperties,
         };
     })

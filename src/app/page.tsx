@@ -1,16 +1,21 @@
-
 // src/app/page.tsx
 "use client";
 import { useEffect, useState, useMemo } from "react";
-import { TrendingUp, FileSearch, FolderKanban, AlertTriangle, MapPin, ShieldCheck } from "lucide-react";
+import { TrendingUp, FileSearch, FolderKanban, AlertTriangle, MapPin, ShieldCheck, Loader2 } from "lucide-react";
+import dynamic from "next/dynamic";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
-import { BarChart, LineChart, Bar, CartesianGrid, XAxis, YAxis, Line, Pie, PieChart as RechartsPieChart, ResponsiveContainer, Tooltip as RechartsTooltip, Legend as RechartsLegend, Cell } from "recharts";
-import Image from "next/image";
+import { BarChart, LineChart, Bar, CartesianGrid, XAxis, YAxis, Line, Cell } from "recharts";
 import { useToast } from "@/hooks/use-toast";
 import type { Case, CaseAnalysis, AggregatedCrimeTag } from "@/types/case";
-import { Loader2 } from "lucide-react";
 import type { ClassifyTextForCrimesOutput } from "@/ai/flows/classify-text-for-crimes-flow";
+import type { MapMarkerData } from "@/components/dashboard/CaseMap";
+
+const CaseMap = dynamic(() => import("@/components/dashboard/CaseMap"), {
+  ssr: false,
+  loading: () => <div className="flex items-center justify-center h-full"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Carregando mapa...</p></div>,
+});
+
 
 type ChartConfig = Record<string, { label: string; color: string }>;
 
@@ -27,7 +32,7 @@ const crimeColors: string[] = [
   "hsl(var(--chart-3))",
   "hsl(var(--chart-4))",
   "hsl(var(--chart-5))",
-  "hsl(var(--accent))", // Using accent for variety
+  "hsl(var(--accent))",
 ];
 
 
@@ -94,8 +99,9 @@ export default function DashboardPage() {
     const sortedMonths = Object.keys(countsByMonth).sort((a, b) => {
         const [monthA, yearA] = a.split('/');
         const [monthB, yearB] = b.split('/');
-        const dateA = new Date(`01 ${monthA} 20${yearA}`);
-        const dateB = new Date(`01 ${monthB} 20${yearB}`);
+        // Simple date conversion for sorting; for production, use a robust date library
+        const dateA = new Date(parseInt(`20${yearA}`), new Date(Date.parse(monthA +" 1, 2012")).getMonth());
+        const dateB = new Date(parseInt(`20${yearB}`), new Date(Date.parse(monthB +" 1, 2012")).getMonth());
         return dateA.getTime() - dateB.getTime();
     });
 
@@ -109,17 +115,10 @@ export default function DashboardPage() {
     novosCasos: { label: "Novos Casos", color: "hsl(var(--chart-1))" },
   };
   
-  const pieChartDataStatus = casesByStatusChartData.map(item => ({
-    name: item.status,
-    value: item.count,
-    fill: item.fill,
-  }));
-
   const aggregatedCrimeData: AggregatedCrimeTag[] = useMemo(() => {
     const crimeCounts: Record<string, number> = {};
     cases.forEach(c => {
       c.relatedAnalyses.forEach(analysis => {
-        // Check for crimeAnalysisResults in document data, and potentially other similar fields in other analysis types later
         const crimeAnalysis = (analysis.data as any)?.crimeAnalysisResults as ClassifyTextForCrimesOutput | undefined;
         if (crimeAnalysis?.crimeTags && crimeAnalysis.crimeTags.length > 0) {
           crimeAnalysis.crimeTags.forEach(tag => {
@@ -132,12 +131,12 @@ export default function DashboardPage() {
     });
 
     const sortedCrimeData = Object.entries(crimeCounts)
-      .sort(([, countA], [, countB]) => countB - countA) // Sort by count descending
-      .slice(0, 10); // Take top 10 for readability
+      .sort(([, countA], [, countB]) => countB - countA) 
+      .slice(0, 10); 
 
     return sortedCrimeData.map(([name, value], index) => ({
-      name, // For BarChart dataKey
-      crimeType: name, // For label/tooltip
+      name, 
+      crimeType: name, 
       count: value,
       fill: crimeColors[index % crimeColors.length],
     }));
@@ -149,6 +148,20 @@ export default function DashboardPage() {
       return acc;
     }, {} as ChartConfig)
   , [aggregatedCrimeData]);
+
+  const mapMarkers: MapMarkerData[] = useMemo(() => {
+    return cases.map((caseItem, index) => {
+      // Placeholder: Generate somewhat random coordinates within Brazil for demonstration
+      // In a real app, you'd get these from case data or analysis results
+      const lat = -15.7801 + (Math.random() - 0.5) * 20; // Around Brasília +/- 10 degrees
+      const lon = -47.9292 + (Math.random() - 0.5) * 20; // Around Brasília +/- 10 degrees
+      return {
+        id: caseItem.id,
+        position: [lat, lon],
+        popupContent: `<b>Caso:</b> ${caseItem.name}<br/><b>Status:</b> ${caseItem.status}<br/><b>Descrição:</b> ${caseItem.description.substring(0,50)}...`,
+      };
+    });
+  }, [cases]);
 
 
   if (isLoading) {
@@ -223,7 +236,7 @@ export default function DashboardPage() {
                   <ChartTooltip 
                       cursor={false} 
                       content={<ChartTooltipContent 
-                          formatter={(value, name) => `${value} casos`}
+                          formatter={(value) => `${value} casos`}
                           labelFormatter={(label) => `Status: ${label}`} 
                       />} 
                   />
@@ -281,7 +294,7 @@ export default function DashboardPage() {
         <Card className="col-span-1">
             <CardHeader>
                 <CardTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-primary"/> Tipos de Crimes Identificados (Top 10)</CardTitle>
-                <CardDescription>Distribuição dos principais tipos de crimes identificados nas análises.</CardDescription>
+                <CardDescription>Distribuição dos principais tipos de crimes identificados nas análises de documentos.</CardDescription>
             </CardHeader>
             <CardContent className="h-[350px]">
               {aggregatedCrimeData.length > 0 ? (
@@ -289,16 +302,16 @@ export default function DashboardPage() {
                    <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={aggregatedCrimeData} layout="vertical" margin={{ right: 20}}>
                       <CartesianGrid horizontal={false} />
-                      <YAxis dataKey="name" type="category" tickLine={false} axisLine={false} tickMargin={10} width={150} />
+                      <YAxis dataKey="crimeType" type="category" tickLine={false} axisLine={false} tickMargin={10} width={150} interval={0}/>
                       <XAxis dataKey="count" type="number" hide />
                       <ChartTooltip 
                         cursor={false} 
-                        content={<ChartTooltipContent formatter={(value, name) => `${value} ocorrências`} />} 
+                        content={<ChartTooltipContent formatter={(value) => `${value} ocorrências`} />} 
                       />
                        <ChartLegend content={<ChartLegendContent />} />
                        <Bar dataKey="count" radius={5} barSize={20}>
                         {aggregatedCrimeData.map((entry) => (
-                          <Cell key={`cell-${entry.name}`} fill={entry.fill} name={entry.name}/>
+                          <Cell key={`cell-${entry.crimeType}`} fill={entry.fill} name={entry.crimeType}/>
                         ))}
                       </Bar>
                     </BarChart>
@@ -315,23 +328,19 @@ export default function DashboardPage() {
         </Card>
         <Card className="col-span-1">
           <CardHeader>
-            <CardTitle>Pontos Críticos Geoespaciais (Exemplo)</CardTitle>
-            <CardDescription>Concentração de incidentes em mapa ilustrativo.</CardDescription>
+            <CardTitle>Pontos Críticos Geoespaciais (Casos)</CardTitle>
+            <CardDescription>Distribuição geográfica dos casos (localizações simuladas).</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="aspect-video w-full overflow-hidden rounded-lg border bg-muted">
-              <Image
-                src="https://picsum.photos/seed/mapa_pontos_criticos/800/450"
-                alt="Mapa de Pontos Críticos de Crimes"
-                width={800}
-                height={450}
-                className="h-full w-full object-cover"
-                data-ai-hint="mapa cidade"
-              />
-            </div>
-             <p className="mt-2 text-sm text-muted-foreground flex items-center">
-                <MapPin className="mr-1 h-4 w-4" /> Mapa de exemplo mostrando agrupamentos de incidentes.
-            </p>
+          <CardContent className="h-[350px] p-0">
+            {typeof window !== 'undefined' && cases.length > 0 ? (
+                <CaseMap markers={mapMarkers} />
+             ) : (
+                <div className="flex flex-col items-center justify-center h-full text-center">
+                    <MapPin className="h-12 w-12 text-muted-foreground mb-2" />
+                    <p className="text-muted-foreground">Nenhum dado de caso para exibir no mapa.</p>
+                    <p className="text-xs text-muted-foreground">Cadastre casos para visualizá-los aqui.</p>
+                </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -339,4 +348,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-

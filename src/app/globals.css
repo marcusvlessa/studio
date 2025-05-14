@@ -2,6 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Import Leaflet CSS */
+@import "leaflet/dist/leaflet.css";
+
 @layer base {
   :root {
     --background: 204 17% 94%; /* Light Gray */
@@ -107,4 +110,10 @@
   body {
     @apply font-sans bg-background text-foreground; /* Use Tailwind's font-sans utility */
   }
+}
+
+/* Leaflet map container default height */
+.leaflet-container {
+  height: 400px;
+  width: 100%;
 }

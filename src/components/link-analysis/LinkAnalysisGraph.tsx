@@ -145,11 +145,13 @@ function InnerGraph({ relationshipsData, identifiedEntitiesData }: LinkAnalysisG
   const { fitView, zoomIn, zoomOut } = useReactFlow();
 
   React.useEffect(() => {
-    console.log("[InnerGraph] Props received - identifiedEntitiesData:", 
-      identifiedEntitiesData.map(e => ({ id: e.id, label: e.label, type: e.type }))
+    console.log("[InnerGraph] Props received - identifiedEntitiesData (count, sample IDs):", 
+      identifiedEntitiesData?.length, 
+      identifiedEntitiesData?.slice(0,5).map(e => e.id)
     );
-    console.log("[InnerGraph] Props received - relationshipsData:", 
-      relationshipsData.map(r => ({ id: r.id, source: r.source, target: r.target, label: r.label }))
+    console.log("[InnerGraph] Props received - relationshipsData (count, sample source/target):", 
+      relationshipsData?.length,
+      relationshipsData?.slice(0,5).map(r => ({ source: r.source, target: r.target, label: r.label }))
     );
   }, [identifiedEntitiesData, relationshipsData]);
 
@@ -165,19 +167,19 @@ function InnerGraph({ relationshipsData, identifiedEntitiesData }: LinkAnalysisG
     }
     
     const finalNodes: Node<CustomNodeData>[] = identifiedEntitiesData.map(entity => ({
-      id: entity.id, 
+      id: entity.id, // This ID *must* be the final, sanitized ID used by ReactFlow
       type: 'custom',
       data: {
         label: entity.label,
         type: entity.type,
         properties: entity.properties,
       },
-      position: { x: Math.random() * 400, y: Math.random() * 400 }, 
+      position: { x: Math.random() * 400, y: Math.random() * 400 }, // Initial position, will be overwritten by layout
     }));
     
     console.log("[LinkAnalysisGraph] Processed nodes for React Flow (IDs should be final):", finalNodes.map(n => ({id: n.id, label: n.data.label})));
 
-    const nodeIds = new Set(finalNodes.map(n => n.id));
+    const nodeIds = new Set(finalNodes.map(n => n.id)); // Create a set of valid node IDs for quick lookup
 
     const finalEdges: Edge<EdgeData>[] = relationshipsData
     .filter(rel => {
@@ -185,8 +187,10 @@ function InnerGraph({ relationshipsData, identifiedEntitiesData }: LinkAnalysisG
             console.warn(`[LinkAnalysisGraph] Relationship in props has missing source ('${rel.source}') or target ('${rel.target}'). Relation:`, rel);
             return false;
         }
+        // IMPORTANT: Check if the source and target IDs from relationshipsData exist in the finalNodes
         const sourceExists = nodeIds.has(rel.source);
         const targetExists = nodeIds.has(rel.target);
+        
         if (!sourceExists) {
             console.warn(`[LinkAnalysisGraph] Edge prop filtered: Source node ID '${rel.source}' for relation '${rel.label}' not found in finalNodes. Node IDs present: [${Array.from(nodeIds).join(', ')}]`);
         }
@@ -197,21 +201,21 @@ function InnerGraph({ relationshipsData, identifiedEntitiesData }: LinkAnalysisG
     })
     .map((rel, index) => ({ 
       id: rel.id || `edge-${index}-${rel.source}-${rel.target}`, 
-      source: rel.source, 
-      target: rel.target, 
+      source: rel.source, // This should be a valid node ID from finalNodes
+      target: rel.target, // This should be a valid node ID from finalNodes
       label: rel.label,
       type: 'smoothstep', 
       animated: rel.strength !== undefined && rel.strength > 0.75,
       markerEnd: rel.direction === "direcional" || rel.direction === "bidirecional" ? {
           type: MarkerType.ArrowClosed,
-          width: 20,
-          height: 20,
+          width: 15, // Adjusted size
+          height: 15, // Adjusted size
           color: 'hsl(var(--primary))',
       } : undefined,
       markerStart: rel.direction === "bidirecional" ? {
           type: MarkerType.ArrowClosed,
-          width: 20,
-          height: 20,
+          width: 15, // Adjusted size
+          height: 15, // Adjusted size
           color: 'hsl(var(--primary))',
       } : undefined,
       style: {
@@ -236,7 +240,7 @@ function InnerGraph({ relationshipsData, identifiedEntitiesData }: LinkAnalysisG
         setEdges(layoutedEdges); 
         console.log("[LinkAnalysisGraph] Nodes set for React Flow:", layoutedNodes.length, "Edges set:", layoutedEdges.length);
         if (layoutedEdges.length === 0 && relationshipsData.length > 0) {
-            console.warn("[LinkAnalysisGraph] Original relationshipsData had items, but finalEdges is empty. Check filtering logic and ID matching.");
+            console.warn("[LinkAnalysisGraph] Original relationshipsData had items, but finalEdges is empty. Check filtering logic and ID matching. This is the most common reason for missing edges.");
         }
         setTimeout(() => fitView({ padding: 0.2, duration: 500 }), 200); 
     } else {
@@ -258,8 +262,8 @@ function InnerGraph({ relationshipsData, identifiedEntitiesData }: LinkAnalysisG
         edges,
         direction
       );
-      setNodes([...layoutedNodes]); 
-      setEdges([...layoutedEdges]); 
+      setNodes([...layoutedNodes]); // Ensure new array instance
+      setEdges([...layoutedEdges]); // Ensure new array instance
       console.log(`[LinkAnalysisGraph] Layout applied: ${direction}. Nodes: ${layoutedNodes.length}, Edges: ${layoutedEdges.length}`);
       setTimeout(() => {
         fitView({ padding: 0.2, duration: 500 }); 
@@ -269,7 +273,8 @@ function InnerGraph({ relationshipsData, identifiedEntitiesData }: LinkAnalysisG
   );
 
   if (!identifiedEntitiesData || identifiedEntitiesData.length === 0) {
-    return null; 
+    // Optionally render a message or a placeholder if there are no entities
+    return null; // Or <p>Nenhuma entidade para exibir no grafo.</p>;
   }
 
   return (
@@ -348,12 +353,16 @@ InnerGraph.displayName = "InnerGraph";
 
 
 export default function LinkAnalysisGraphWrapper(props: LinkAnalysisGraphProps) {
+  // Ensure data is available before rendering the provider and graph
   if (!props.identifiedEntitiesData || !props.relationshipsData) {
+    // console.log("[LinkAnalysisGraphWrapper] No data to render, returning null.");
     return null; 
   }
+  // console.log("[LinkAnalysisGraphWrapper] Rendering ReactFlowProvider with data:", props);
   return (
     <ReactFlowProvider>
       <InnerGraph {...props} />
     </ReactFlowProvider>
   );
 }
+

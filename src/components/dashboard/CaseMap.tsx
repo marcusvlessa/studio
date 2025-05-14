@@ -41,12 +41,11 @@ const CaseMap: React.FC<CaseMapProps> = ({
   }, []);
 
   // Generate a key that changes if crucial map props change.
-  // This helps ensure React replaces the MapContainer instance if necessary.
   const mapKey = useMemo(() => {
-    // Create a stable string representation of markers for the key
-    const markersKeyPart = markers.map(m => `${m.id}_${m.position.toString()}`).join(';');
-    return `map-${JSON.stringify(center)}-${zoom}-${markers.length}-${markersKeyPart}`;
+    const markersKeyPart = markers.map(m => `${m.id}_${JSON.stringify(m.position)}`).join(';');
+    return `map-${JSON.stringify(center)}-${zoom}-${markersKeyPart}`;
   }, [center, zoom, markers]);
+
 
   if (!isClient) {
     return (
@@ -57,7 +56,7 @@ const CaseMap: React.FC<CaseMapProps> = ({
     );
   }
 
-  if (markers.length === 0) {
+  if (markers.length === 0) { 
      return (
       <div style={{ height: '100%', width: '100%' }} className="rounded-lg shadow-md bg-muted flex flex-col items-center justify-center text-muted-foreground p-4 text-center">
         <MapPin className="h-10 w-10 mb-2" />
@@ -67,10 +66,14 @@ const CaseMap: React.FC<CaseMapProps> = ({
   }
   
   return (
-    // Using the generated mapKey.
-    // The MapContainer's key prop ensures that if critical data for the map (center, zoom, markers) changes,
-    // React will unmount the old component and mount a new one, allowing Leaflet to initialize cleanly.
-    <MapContainer key={mapKey} center={center} zoom={zoom} scrollWheelZoom={true} style={{ height: '100%', width: '100%' }} className="rounded-lg shadow-md">
+    <MapContainer
+      key={mapKey} 
+      center={center}
+      zoom={zoom}
+      scrollWheelZoom={true}
+      style={{ height: '100%', width: '100%' }}
+      className="rounded-lg shadow-md"
+    >
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"

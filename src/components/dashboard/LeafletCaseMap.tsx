@@ -2,9 +2,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-// Ensure correct imports from react-leaflet
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
-import L, { type Map as LeafletMap, type LatLngExpression } from 'leaflet'; // Import types explicitly
+import type { Map as LeafletMap, LatLngExpression } from 'leaflet';
+import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Loader2 } from 'lucide-react';
 import type { MapMarkerData } from '@/types/case';
@@ -38,7 +38,6 @@ const defaultInitialCenter: LatLngExpression = [-15.7801, -47.9292]; // Brasíli
 const MapUpdater = ({ center, zoomLevel }: { center: LatLngExpression; zoomLevel: number }) => {
   const map = useMap();
   useEffect(() => {
-    // Check if center is a valid LatLngTuple or LatLngLiteral with finite numbers
     let isValidCenter = false;
     if (Array.isArray(center) && center.length === 2 && Number.isFinite(center[0]) && Number.isFinite(center[1])) {
       isValidCenter = true;
@@ -55,38 +54,28 @@ const MapUpdater = ({ center, zoomLevel }: { center: LatLngExpression; zoomLevel
 
 const LeafletCaseMap: React.FC<LeafletCaseMapProps> = ({
   markers,
-  center: initialCenterProp, 
+  center: initialCenterProp,
   zoom: initialZoomProp = 4,
 }) => {
   const [isClient, setIsClient] = useState(false);
   const mapInstanceRef = useRef<LeafletMap | null>(null);
-  
-  // Key to force re-mount MapContainer, helps with HMR and potential re-initialization issues
-  const [mapKey, setMapKey] = useState(() => `leaflet-map-initial-${Date.now()}`);
+  // Using a stable key to prevent unnecessary re-mounts of MapContainer itself.
+  // MapUpdater will handle dynamic changes to center/zoom.
+  const mapKey = useMemo(() => `leaflet-map-${Math.random().toString(36).substring(7)}`, []);
+
 
   useEffect(() => {
     setIsClient(true);
-    // Set initial map key on client mount
-    setMapKey(`leaflet-map-client-${Date.now()}-${Math.random()}`);
   }, []);
-
-  // Update mapKey if markers reference changes significantly, forcing a full remount.
-  useEffect(() => {
-    if(isClient) { // Only update mapKey after initial client mount
-        const markerSignature = markers.map(m => `${m.id}-${m.position.lat}-${m.position.lng}`).join('_');
-        setMapKey(`leaflet-map-markers-${markerSignature}-${Date.now()}`);
-    }
-  }, [markers, isClient]);
-
 
   const center = useMemo<LatLngExpression>(() => {
     if (initialCenterProp) {
-        if (Array.isArray(initialCenterProp) && initialCenterProp.length === 2 && Number.isFinite(initialCenterProp[0]) && Number.isFinite(initialCenterProp[1])) {
-            return initialCenterProp as [number, number];
-        }
-        if (typeof initialCenterProp === 'object' && 'lat' in initialCenterProp && 'lng' in initialCenterProp && Number.isFinite(initialCenterProp.lat) && Number.isFinite(initialCenterProp.lng)) {
-            return [initialCenterProp.lat, initialCenterProp.lng];
-        }
+      if (Array.isArray(initialCenterProp) && initialCenterProp.length === 2 && Number.isFinite(initialCenterProp[0]) && Number.isFinite(initialCenterProp[1])) {
+        return initialCenterProp as [number, number];
+      }
+      if (typeof initialCenterProp === 'object' && 'lat' in initialCenterProp && 'lng' in initialCenterProp && Number.isFinite(initialCenterProp.lat) && Number.isFinite(initialCenterProp.lng)) {
+        return [initialCenterProp.lat, initialCenterProp.lng];
+      }
     }
     if (markers.length > 0 && markers[0]?.position &&
         Number.isFinite(markers[0].position.lat) &&
@@ -98,20 +87,21 @@ const LeafletCaseMap: React.FC<LeafletCaseMapProps> = ({
 
   const zoom = useMemo(() => {
     if (markers.length === 1) return 10;
-    if (markers.length > 0 && markers.length < 5) return 6; // Slightly more zoomed for few markers
+    if (markers.length > 0 && markers.length < 5) return 6;
     return initialZoomProp;
   }, [markers, initialZoomProp]);
 
+  // Cleanup map instance on component unmount
   useEffect(() => {
-    // This effect's cleanup function will run when the component associated with 'mapKey' unmounts
     return () => {
       if (mapInstanceRef.current) {
-        // console.log("LeafletCaseMap: Removing map instance due to key change or unmount:", mapKey);
+        // console.log("LeafletCaseMap: Removing map instance on unmount for key:", mapKey);
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
       }
     };
-  }, [mapKey]); // Key dependency ensures cleanup runs before new instance for new key mounts
+  }, [mapKey]); // This dependency ensures cleanup happens if mapKey were to change, but mapKey is now stable.
+                // The primary purpose here is cleanup when LeafletCaseMap itself unmounts.
 
   if (!isClient) {
     return (
@@ -121,16 +111,21 @@ const LeafletCaseMap: React.FC<LeafletCaseMapProps> = ({
       </div>
     );
   }
-  
+
   return (
     <MapContainer
-      key={mapKey} 
+      key={mapKey} // Key to help React differentiate MapContainer instances if needed, though now stable.
       center={center}
       zoom={zoom}
       scrollWheelZoom={true}
       style={mapContainerStyle}
       className="rounded-lg shadow-md"
       whenCreated={(mapInstance) => {
+        // console.log("LeafletCaseMap: Map instance created for key:", mapKey, mapInstance);
+        if (mapInstanceRef.current && mapInstanceRef.current !== mapInstance) {
+            // console.warn("LeafletCaseMap: Potentially overwriting an existing map instance ref. This might indicate a problem if not intended.");
+            // mapInstanceRef.current.remove(); // Clean up old instance if it wasn't cleaned up properly
+        }
         mapInstanceRef.current = mapInstance;
       }}
     >

@@ -9,13 +9,18 @@ import { BarChart, LineChart, Bar, CartesianGrid, XAxis, YAxis, Line, Cell, Resp
 import { useToast } from "@/hooks/use-toast";
 import type { Case, CaseAnalysis, AggregatedCrimeTag } from "@/types/case";
 import type { ClassifyTextForCrimesOutput } from "@/ai/flows/classify-text-for-crimes-flow";
-import type { MapMarkerData } from "@/components/dashboard/CaseMap";
 
-const CaseMap = dynamic(() => import("@/components/dashboard/CaseMap"), {
+// Dynamically import the GoogleCaseMap component
+const GoogleCaseMap = dynamic(() => import("@/components/dashboard/GoogleCaseMap"), {
   ssr: false,
   loading: () => <div className="flex items-center justify-center h-full bg-muted rounded-lg"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Carregando mapa...</p></div>,
 });
 
+export interface GoogleMapMarkerData {
+  position: { lat: number; lng: number };
+  popupContent: string;
+  id: string;
+}
 
 type ChartConfig = Record<string, { label: string; color: string }>;
 
@@ -40,6 +45,7 @@ export default function DashboardPage() {
   const [cases, setCases] = useState<Case[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
+  const googleMapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
   useEffect(() => {
     const fetchCases = async () => {
@@ -99,7 +105,6 @@ export default function DashboardPage() {
     const sortedMonths = Object.keys(countsByMonth).sort((a, b) => {
         const [monthA, yearA] = a.split('/');
         const [monthB, yearB] = b.split('/');
-        // Simple date conversion for sorting; for production, use a robust date library
         const dateA = new Date(parseInt(`20${yearA}`), new Date(Date.parse(monthA +" 1, 2012")).getMonth());
         const dateB = new Date(parseInt(`20${yearB}`), new Date(Date.parse(monthB +" 1, 2012")).getMonth());
         return dateA.getTime() - dateB.getTime();
@@ -119,7 +124,6 @@ export default function DashboardPage() {
     const crimeCounts: Record<string, number> = {};
     cases.forEach(c => {
       c.relatedAnalyses.forEach(analysis => {
-        // Check if the analysis is DocumentCaseAnalysis and has crimeAnalysisResults
         if (analysis.type === "Documento" && analysis.data && 'crimeAnalysisResults' in analysis.data) {
             const docAnalysisData = analysis.data as { crimeAnalysisResults?: ClassifyTextForCrimesOutput };
             if (docAnalysisData.crimeAnalysisResults?.crimeTags && docAnalysisData.crimeAnalysisResults.crimeTags.length > 0) {
@@ -152,18 +156,17 @@ export default function DashboardPage() {
     }, {} as ChartConfig)
   , [aggregatedCrimeData]);
 
-  const mapMarkers: MapMarkerData[] = useMemo(() => {
+  const mapMarkers: GoogleMapMarkerData[] = useMemo(() => {
     if (!cases || cases.length === 0) return [];
     return cases.map((caseItem, index) => {
       // Generate pseudo-random but deterministic coordinates based on index or ID
-      // This avoids Math.random() on each render, making markers stable
-      const latOffset = (index % 10) * 0.5 - 2.5 + (parseInt(caseItem.id.substring(0, 2), 16) / 255 - 0.5) * 0.2; // Slight variation based on ID
-      const lonOffset = ((index * 3) % 10) * 0.5 - 2.5 + (parseInt(caseItem.id.substring(2, 4), 16) / 255 - 0.5) * 0.2; // Slight variation
-      const lat = -15.7801 + latOffset * 2; // Increased spread
-      const lon = -47.9292 + lonOffset * 2; // Increased spread
+      const latOffset = (index % 10) * 0.5 - 2.5 + (parseInt(caseItem.id.substring(0, 2), 16) / 255 - 0.5) * 0.2;
+      const lngOffset = ((index * 3) % 10) * 0.5 - 2.5 + (parseInt(caseItem.id.substring(2, 4), 16) / 255 - 0.5) * 0.2;
+      const lat = -15.7801 + latOffset * 2; 
+      const lng = -47.9292 + lngOffset * 2;
       return {
         id: caseItem.id,
-        position: [lat, lon] as [number, number],
+        position: { lat, lng },
         popupContent: `<b>Caso:</b> ${caseItem.name}<br/><b>Status:</b> ${caseItem.status}<br/><b>Descrição:</b> ${caseItem.description.substring(0,50)}...`,
       };
     });
@@ -338,13 +341,13 @@ export default function DashboardPage() {
             <CardDescription>Distribuição geográfica dos casos (localizações simuladas).</CardDescription>
           </CardHeader>
           <CardContent className="h-[350px] p-0">
-            {cases.length > 0 ? (
-                <CaseMap markers={mapMarkers} />
+             {cases.length > 0 && googleMapsApiKey ? (
+                <GoogleCaseMap markers={mapMarkers} apiKey={googleMapsApiKey} />
              ) : (
                 <div className="flex flex-col items-center justify-center h-full text-center bg-muted rounded-lg">
                     <MapPin className="h-12 w-12 text-muted-foreground mb-2" />
-                    <p className="text-muted-foreground">Nenhum caso para exibir no mapa.</p>
-                    <p className="text-xs text-muted-foreground">Cadastre casos para visualizá-los aqui.</p>
+                    <p className="text-muted-foreground">{!googleMapsApiKey ? "Chave API do Google Maps não configurada." : "Nenhum caso para exibir no mapa."}</p>
+                    <p className="text-xs text-muted-foreground">{!googleMapsApiKey ? "Adicione a chave em .env para ver o mapa." : "Cadastre casos para visualizá-los aqui."}</p>
                 </div>
             )}
           </CardContent>
@@ -354,4 +357,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-

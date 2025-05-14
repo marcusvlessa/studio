@@ -158,12 +158,44 @@ export default function DashboardPage() {
 
   const mapMarkers: GoogleMapMarkerData[] = useMemo(() => {
     if (!cases || cases.length === 0) return [];
+    
+    const parseHexSafe = (str: string): number => {
+      const parsed = parseInt(str, 16);
+      return isNaN(parsed) ? Math.floor(Math.random() * 256) : parsed; // Use random if not hex
+    };
+
     return cases.map((caseItem, index) => {
-      // Generate pseudo-random but deterministic coordinates based on index or ID
-      const latOffset = (index % 10) * 0.5 - 2.5 + (parseInt(caseItem.id.substring(0, 2), 16) / 255 - 0.5) * 0.2;
-      const lngOffset = ((index * 3) % 10) * 0.5 - 2.5 + (parseInt(caseItem.id.substring(2, 4), 16) / 255 - 0.5) * 0.2;
-      const lat = -15.7801 + latOffset * 2; 
-      const lng = -47.9292 + lngOffset * 2;
+      // Generate pseudo-random but deterministic coordinates
+      // Use a combination of index and parts of the ID for more variation
+      // Ensure substrings are valid or provide defaults
+      const idPart1Str = caseItem.id.length >= 2 ? caseItem.id.substring(0, 2) : "00";
+      const idPart2Str = caseItem.id.length >= 4 ? caseItem.id.substring(2, 4) : "00";
+
+      const idNum1 = parseHexSafe(idPart1Str);
+      const idNum2 = parseHexSafe(idPart2Str);
+
+      // Base coordinates (Brasilia, adjust as needed for desired region)
+      const baseLat = -15.7801;
+      const baseLng = -47.9292;
+
+      // Create offsets - ensure these are not NaN
+      // Maximize spread within a reasonable area (e.g., +/- 5 degrees)
+      const latOffset = ((index * 13) % 100 / 100 - 0.5) * 10 + (idNum1 / 255 - 0.5) * 2; 
+      const lngOffset = ((index * 29) % 100 / 100 - 0.5) * 10 + (idNum2 / 255 - 0.5) * 2;
+      
+      let lat = baseLat + latOffset;
+      let lng = baseLng + lngOffset;
+
+      // Clamp coordinates to valid ranges
+      lat = Math.max(-90, Math.min(90, lat));
+      lng = Math.max(-180, Math.min(180, lng));
+      
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        console.warn(`Generated invalid coordinates for case ${caseItem.id}: lat=${lat}, lng=${lng}. Defaulting to base.`);
+        lat = baseLat + (Math.random() - 0.5) * 0.1; // Small random offset from base
+        lng = baseLng + (Math.random() - 0.5) * 0.1;
+      }
+
       return {
         id: caseItem.id,
         position: { lat, lng },

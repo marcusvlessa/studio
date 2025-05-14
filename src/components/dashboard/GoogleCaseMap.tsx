@@ -25,7 +25,7 @@ const defaultCenter = {
 
 const GoogleCaseMap: React.FC<GoogleCaseMapProps> = ({
   markers,
-  center = defaultCenter,
+  center: initialCenter, // Renamed to avoid confusion with internal state if needed
   zoom = 4,
   apiKey,
 }) => {
@@ -47,6 +47,25 @@ const GoogleCaseMap: React.FC<GoogleCaseMapProps> = ({
     fullscreenControl: false,
   }), []);
 
+  const currentMapCenter = useMemo(() => {
+    if (markers.length > 0 && markers[0]?.position && 
+        Number.isFinite(markers[0].position.lat) && 
+        Number.isFinite(markers[0].position.lng)) {
+      return markers[0].position;
+    }
+    if (initialCenter && Number.isFinite(initialCenter.lat) && Number.isFinite(initialCenter.lng)) {
+      return initialCenter;
+    }
+    return defaultCenter; // Fallback to a known good center
+  }, [markers, initialCenter]);
+
+  const currentZoom = useMemo(() => {
+    if (markers.length > 0 && markers.length < 5) {
+      return 6; // Zoom in a bit if few markers
+    }
+    return zoom;
+  }, [markers, zoom]);
+
 
   if (!apiKey) {
     return (
@@ -62,19 +81,21 @@ const GoogleCaseMap: React.FC<GoogleCaseMapProps> = ({
     <LoadScriptNext googleMapsApiKey={apiKey} loadingElement={<div className="flex items-center justify-center h-full bg-muted rounded-lg"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Carregando mapa...</p></div>}>
       <GoogleMap
         mapContainerStyle={mapContainerStyle}
-        center={markers.length > 0 ? markers[0].position : center}
-        zoom={markers.length > 0 && markers.length < 5 ? 6 : zoom} // Zoom in a bit if few markers
+        center={currentMapCenter}
+        zoom={currentZoom}
         options={mapOptions}
       >
         {markers.map((marker) => (
-          <MarkerF
-            key={marker.id}
-            position={marker.position}
-            onClick={() => onMarkerClick(marker)}
-          />
+          marker?.position && Number.isFinite(marker.position.lat) && Number.isFinite(marker.position.lng) && (
+            <MarkerF
+              key={marker.id}
+              position={marker.position}
+              onClick={() => onMarkerClick(marker)}
+            />
+          )
         ))}
 
-        {selectedMarker && (
+        {selectedMarker && selectedMarker.position && Number.isFinite(selectedMarker.position.lat) && Number.isFinite(selectedMarker.position.lng) && (
           <InfoWindowF
             position={selectedMarker.position}
             onCloseClick={onInfoWindowClose}

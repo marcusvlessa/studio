@@ -5,7 +5,7 @@ import { TrendingUp, FileSearch, FolderKanban, AlertTriangle, MapPin, ShieldChec
 import dynamic from "next/dynamic";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
-import { BarChart, LineChart, Bar, CartesianGrid, XAxis, YAxis, Line, Cell } from "recharts";
+import { BarChart, LineChart, Bar, CartesianGrid, XAxis, YAxis, Line, Cell, ResponsiveContainer } from "recharts";
 import { useToast } from "@/hooks/use-toast";
 import type { Case, CaseAnalysis, AggregatedCrimeTag } from "@/types/case";
 import type { ClassifyTextForCrimesOutput } from "@/ai/flows/classify-text-for-crimes-flow";
@@ -119,13 +119,16 @@ export default function DashboardPage() {
     const crimeCounts: Record<string, number> = {};
     cases.forEach(c => {
       c.relatedAnalyses.forEach(analysis => {
-        const crimeAnalysis = (analysis.data as any)?.crimeAnalysisResults as ClassifyTextForCrimesOutput | undefined;
-        if (crimeAnalysis?.crimeTags && crimeAnalysis.crimeTags.length > 0) {
-          crimeAnalysis.crimeTags.forEach(tag => {
-            if (tag.crimeType && tag.crimeType !== 'Atividade Suspeita Não Especificada' && tag.crimeType !== 'Atividade Suspeita Relevante') {
-              crimeCounts[tag.crimeType] = (crimeCounts[tag.crimeType] || 0) + 1;
+        // Check if the analysis is DocumentCaseAnalysis and has crimeAnalysisResults
+        if (analysis.type === "Documento" && analysis.data && 'crimeAnalysisResults' in analysis.data) {
+            const docAnalysisData = analysis.data as { crimeAnalysisResults?: ClassifyTextForCrimesOutput };
+            if (docAnalysisData.crimeAnalysisResults?.crimeTags && docAnalysisData.crimeAnalysisResults.crimeTags.length > 0) {
+            docAnalysisData.crimeAnalysisResults.crimeTags.forEach(tag => {
+                if (tag.crimeType && tag.crimeType !== 'Atividade Suspeita Não Especificada' && tag.crimeType !== 'Atividade Suspeita Relevante') {
+                crimeCounts[tag.crimeType] = (crimeCounts[tag.crimeType] || 0) + 1;
+                }
+            });
             }
-          });
         }
       });
     });
@@ -157,7 +160,7 @@ export default function DashboardPage() {
       const lon = -47.9292 + (Math.random() - 0.5) * 20; // Around Brasília +/- 10 degrees
       return {
         id: caseItem.id,
-        position: [lat, lon],
+        position: [lat, lon] as [number, number],
         popupContent: `<b>Caso:</b> ${caseItem.name}<br/><b>Status:</b> ${caseItem.status}<br/><b>Descrição:</b> ${caseItem.description.substring(0,50)}...`,
       };
     });
@@ -348,3 +351,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+

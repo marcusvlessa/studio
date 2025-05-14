@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ShieldAlert, LogOut } from "lucide-react";
+import { BrainCircuit, LogOut } from "lucide-react"; // Changed icon here
 
 type AppLayoutProps = {
   children: ReactNode;
@@ -34,7 +34,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       <Sidebar collapsible="icon" variant="sidebar" side="left">
         <SidebarHeader className="p-4">
           <Link href="/" className="flex items-center gap-2.5"> {/* Increased gap slightly */}
-            <ShieldAlert className="h-9 w-9 text-primary" /> {/* Made icon larger */}
+            <BrainCircuit className="h-9 w-9 text-primary" /> {/* Changed icon here */}
             <h1 className="text-2xl font-semibold text-primary group-data-[collapsible=icon]:hidden"> {/* Made text larger */}
               {APP_NAME}
             </h1>
@@ -99,3 +99,4 @@ export function AppLayout({ children }: AppLayoutProps) {
     </SidebarProvider>
   );
 }
+

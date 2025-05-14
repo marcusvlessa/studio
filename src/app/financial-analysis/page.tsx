@@ -1,7 +1,7 @@
 // src/app/financial-analysis/page.tsx
 "use client";
 
-import { useState, type ChangeEvent, useRef, useEffect, Suspense } from "react";
+import { useState, type ChangeEvent, useRef, useEffect, Suspense, createRef } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -10,23 +10,139 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { Landmark, Upload, RotateCcw, Search, Loader2, FileText, Info, AlertCircle, FolderKanban, Download, FileDown } from "lucide-react";
+import { Landmark, Upload, RotateCcw, Search, Loader2, FileText, Info, AlertCircle, FolderKanban, Download, FileDown, BarChart3, TrendingUp, Users, AlertTriangleIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { analyzeFinancialData, type AnalyzeFinancialDataInput, type AnalyzeFinancialDataOutput } from "@/ai/flows/analyze-financial-data-flow";
+import { analyzeFinancialData, type AnalyzeFinancialDataInput, type AnalyzeFinancialDataOutput, type FinancialDashboardData } from "@/ai/flows/analyze-financial-data-flow";
 import { Alert as ShadAlert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import type { FinancialCaseAnalysis } from "@/types/case";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import jsPDF from 'jspdf';
-import type { PdfHeaderConfig } from '@/types/settings'; // Assuming you create this type
+import html2canvas from 'html2canvas';
+import type { PdfHeaderConfig } from '@/types/settings';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend as RechartsLegend, PieChart, Pie, Cell } from 'recharts';
+
 
 declare global {
   interface Window {
     electronAPI?: {
       getPdfHeaderConfig: () => Promise<PdfHeaderConfig | null>;
-      // Add other Electron API methods if needed
     };
   }
 }
+
+const CHART_COLORS = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4))', 'hsl(var(--chart-5))', 'hsl(var(--accent))'];
+
+interface FinancialDashboardDisplayProps {
+  dashboardData: FinancialDashboardData;
+}
+
+const FinancialDashboardDisplay = React.forwardRef<HTMLDivElement, FinancialDashboardDisplayProps>(({ dashboardData }, ref) => {
+  const { keyMetrics, topSuspiciousTransactions, involvedPartiesProfiles } = dashboardData;
+
+  const transactionsByType = useMemo(() => {
+    const counts: Record<string, number> = {};
+    topSuspiciousTransactions.forEach(t => {
+      const type = t.type || 'Desconhecido';
+      counts[type] = (counts[type] || 0) + 1;
+    });
+    return Object.entries(counts).map(([name, value]) => ({ name, value }));
+  }, [topSuspiciousTransactions]);
+
+  const involvedPartyFlowData = useMemo(() => {
+    return involvedPartiesProfiles.map(p => ({
+      name: p.name,
+      Entrada: parseFloat(p.totalIn?.replace(/[R$.]/g, '').replace(',', '.') || '0'),
+      Saída: parseFloat(p.totalOut?.replace(/[R$.]/g, '').replace(',', '.') || '0')
+    }));
+  }, [involvedPartiesProfiles]);
+
+  return (
+    <div ref={ref} className="p-4 bg-background rounded-lg border">
+      <h2 className="text-xl font-semibold mb-4 text-center text-primary">Dashboard de Inteligência Financeira</h2>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+        {keyMetrics.slice(0, 6).map((metric, index) => (
+          <Card key={index} className="shadow-md hover:shadow-lg transition-shadow">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">{metric.label}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold text-primary">{metric.value} <span className="text-xs text-muted-foreground">{metric.unit}</span></p>
+              {metric.category && <p className="text-xs text-muted-foreground mt-1">Categoria: {metric.category}</p>}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        {transactionsByType.length > 0 && (
+          <Card className="shadow-md">
+            <CardHeader>
+              <CardTitle className="text-md font-semibold flex items-center"><BarChart3 className="mr-2 h-5 w-5 text-primary"/>Distribuição de Tipos de Transações Suspeitas</CardTitle>
+            </CardHeader>
+            <CardContent className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={transactionsByType} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label>
+                    {transactionsByType.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <RechartsTooltip formatter={(value) => `${value} transações`} />
+                  <RechartsLegend />
+                </PieChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        )}
+
+        {involvedPartyFlowData.length > 0 && (
+          <Card className="shadow-md">
+            <CardHeader>
+              <CardTitle className="text-md font-semibold flex items-center"><Users className="mr-2 h-5 w-5 text-primary"/>Fluxo Financeiro por Envolvido Principal</CardTitle>
+            </CardHeader>
+            <CardContent className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={involvedPartyFlowData} layout="vertical" margin={{ left: 100, right: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis type="number" tickFormatter={(value) => `R$${(value/1000).toFixed(0)}k`} />
+                  <YAxis dataKey="name" type="category" width={120} interval={0} tick={{ fontSize: 10 }} />
+                  <RechartsTooltip formatter={(value, name) => [`R$ ${Number(value).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, name === 'Entrada' ? 'Total Entradas' : 'Total Saídas']} />
+                  <RechartsLegend />
+                  <Bar dataKey="Entrada" fill="hsl(var(--chart-2))" name="Total Entradas" radius={[0, 4, 4, 0]}/>
+                  <Bar dataKey="Saída" fill="hsl(var(--chart-4))" name="Total Saídas" radius={[0, 4, 4, 0]}/>
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+      
+      {topSuspiciousTransactions.length > 0 && (
+        <Card className="shadow-md">
+          <CardHeader>
+            <CardTitle className="text-md font-semibold flex items-center"><AlertTriangleIcon className="mr-2 h-5 w-5 text-destructive"/>Principais Transações Suspeitas (Top {topSuspiciousTransactions.length})</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ScrollArea className="h-[250px]">
+              <ul className="space-y-3">
+                {topSuspiciousTransactions.map((tx, index) => (
+                  <li key={tx.id || index} className="p-3 border rounded-md bg-muted/30 hover:bg-muted/50 transition-colors">
+                    <p className="font-semibold text-sm">{tx.description} - <span className="font-bold text-primary">{tx.amount}</span></p>
+                    {tx.date && <p className="text-xs text-muted-foreground">Data: {tx.date}</p>}
+                    {tx.type && <p className="text-xs text-muted-foreground">Tipo: {tx.type}</p>}
+                    {tx.riskIndicator && <p className="text-xs text-red-600">Risco: {tx.riskIndicator}</p>}
+                  </li>
+                ))}
+              </ul>
+            </ScrollArea>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+});
+FinancialDashboardDisplay.displayName = "FinancialDashboardDisplay";
 
 
 function FinancialAnalysisContent() {
@@ -41,6 +157,7 @@ function FinancialAnalysisContent() {
   const [caseContext, setCaseContext] = useState<string>("");
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dashboardRef = createRef<HTMLDivElement>();
 
   const isCaseSelected = !!caseId;
   const caseName = caseNameParam ? decodeURIComponent(caseNameParam) : "Não especificado";
@@ -48,7 +165,7 @@ function FinancialAnalysisContent() {
   const saveAnalysisToCase = async (aiOutput: AnalyzeFinancialDataOutput) => {
     if (!caseId || !selectedFile) return;
 
-    const summary = `Análise Financeira (RIF): ${selectedFile.name}. Relatório gerado.`;
+    const summary = `Análise Financeira (RIF): ${selectedFile.name}. ${aiOutput.dashboardData?.keyMetrics.find(m => m.label.includes("Total Movimentado"))?.value || 'Relatório gerado.'}`;
 
     const analysisEntry: Omit<FinancialCaseAnalysis, 'id' | 'analysisDate'> = {
       type: "Financeiro",
@@ -157,75 +274,115 @@ function FinancialAnalysisContent() {
       toast({ variant: "destructive", title: "Erro", description: "Nenhum relatório para baixar." });
       return;
     }
-
+  
     let pdfHeaderConfig: PdfHeaderConfig | null = null;
     if (typeof window !== 'undefined' && window.electronAPI?.getPdfHeaderConfig) {
-        try {
-            pdfHeaderConfig = await window.electronAPI.getPdfHeaderConfig();
-        } catch (error) {
-            console.error("Failed to load PDF header config from Electron store:", error);
-            toast({ variant: "destructive", title: "Erro de Configuração", description: "Não foi possível carregar a configuração do cabeçalho do PDF."})
-        }
+      try {
+        pdfHeaderConfig = await window.electronAPI.getPdfHeaderConfig();
+      } catch (error) {
+        console.error("Failed to load PDF header config from Electron store:", error);
+        toast({ variant: "destructive", title: "Erro de Configuração", description: "Não foi possível carregar a configuração do cabeçalho do PDF." });
+      }
     }
-
-
+  
     const doc = new jsPDF({
       orientation: 'p',
       unit: 'mm',
       format: 'a4',
     });
-
+  
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
     const margin = 15;
     const contentWidth = pageWidth - 2 * margin;
     let yPosition = margin;
-
-    // Header function
+  
     const addHeader = () => {
       if (pdfHeaderConfig?.logoBase64) {
         try {
           const imgProps = doc.getImageProperties(pdfHeaderConfig.logoBase64);
           const aspectRatio = imgProps.width / imgProps.height;
-          let logoHeight = 15; // Max logo height
+          let logoHeight = 15;
           let logoWidth = logoHeight * aspectRatio;
-          if (logoWidth > 40) { // Max logo width
+          if (logoWidth > 40) {
             logoWidth = 40;
             logoHeight = logoWidth / aspectRatio;
           }
-          doc.addImage(pdfHeaderConfig.logoBase64, 'PNG', margin, margin -10, logoWidth, logoHeight);
+          doc.addImage(pdfHeaderConfig.logoBase64, 'PNG', margin, margin - 10, logoWidth, logoHeight);
         } catch (e) {
-            console.error("Error adding logo to PDF:", e);
-            // Fallback text if logo fails
-            doc.setFontSize(10);
-            doc.text("Logo Indisponível", margin, margin - 5);
+          console.error("Error adding logo to PDF:", e);
+          doc.setFontSize(10);
+          doc.text("Logo Indisponível", margin, margin - 5);
         }
       }
       doc.setFontSize(12);
       doc.setFont('helvetica', 'bold');
       doc.text(pdfHeaderConfig?.headerText || `Relatório - ${selectedFile.name}`, pageWidth / 2, margin, { align: 'center' });
-      yPosition = margin + 15; // Initial yPosition after header
+      yPosition = margin + 15;
       doc.setLineWidth(0.5);
-      doc.line(margin, yPosition - 5, pageWidth - margin, yPosition - 5); // Header underline
+      doc.line(margin, yPosition - 5, pageWidth - margin, yPosition - 5);
       yPosition += 5;
     };
+  
+    addHeader(); // Add header to the first page
+  
+    // Add Dashboard Image if data exists
+    if (analysisResult.dashboardData && dashboardRef.current) {
+        // Temporarily make dashboard visible for capture if it's normally hidden or styled for off-screen
+        const originalStyle = dashboardRef.current.style.cssText;
+        dashboardRef.current.style.cssText = 'position: absolute; left: -9999px; top: -9999px; width: 800px; background: white; padding: 10px;'; // Ensure it has a background for capture
+        
+        await new Promise(resolve => setTimeout(resolve, 100)); // Allow time for render
 
-    addHeader();
+        try {
+            const canvas = await html2canvas(dashboardRef.current, { scale: 1.5, useCORS: true, allowTaint: true, backgroundColor: '#ffffff' });
+            const imgData = canvas.toDataURL('image/png');
+            const imgWidth = contentWidth; 
+            const imgHeight = (canvas.height * imgWidth) / canvas.width;
+            
+            if (yPosition + imgHeight + 10 > pageHeight - margin) {
+              doc.addPage();
+              addHeader();
+            }
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(14);
+            doc.text("Dashboard de Inteligência Financeira (Resumo Visual)", margin, yPosition);
+            yPosition += 10;
+            doc.addImage(imgData, 'PNG', margin, yPosition, imgWidth, imgHeight);
+            yPosition += imgHeight + 10; // Add some space after the image
+
+        } catch(e) {
+            console.error("Error capturing dashboard image:", e);
+            toast({variant: "destructive", title: "Erro ao Gerar Imagem do Dashboard", description: "Não foi possível incluir o dashboard no PDF."});
+        } finally {
+            dashboardRef.current.style.cssText = originalStyle; // Restore original style
+        }
+    }
+  
+    // Add Textual Report
+    if (yPosition + 20 > pageHeight - margin) { // Check if new page is needed before text report
+        doc.addPage();
+        addHeader();
+    }
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.text("Relatório de Inteligência Financeira Detalhado", margin, yPosition);
+    yPosition += 10;
+    
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-
     const reportText = analysisResult.financialIntelligenceReport;
     const lines = doc.splitTextToSize(reportText, contentWidth);
-
+  
     lines.forEach((line: string) => {
-      if (yPosition + 10 > pageHeight - margin) { // Check if new page is needed (10 is approx line height)
+      if (yPosition + 7 > pageHeight - margin) { 
         doc.addPage();
-        addHeader(); // Add header to new page
+        addHeader();
       }
       doc.text(line, margin, yPosition);
-      yPosition += 7; // Increment y position for next line (adjust as needed for line spacing)
+      yPosition += 7; 
     });
-
+  
     doc.save(`RIF_${selectedFile.name.replace(/\.[^/.]+$/, "")}.pdf`);
     toast({ title: "Download do PDF Iniciado", description: `RIF_${selectedFile.name}.pdf` });
   };
@@ -311,33 +468,52 @@ function FinancialAnalysisContent() {
           </Button>
             {analysisResult && (
             <Button variant="outline" onClick={handleDownloadPdf} disabled={isLoading}>
-                <FileDown className="mr-2 h-4 w-4" /> Baixar PDF
+                <FileDown className="mr-2 h-4 w-4" /> Baixar PDF com Dashboard
             </Button>
           )}
         </CardFooter>
       </Card>
+      
+      {/* Hidden div for dashboard capture - will be populated on demand */}
+      <div id="dashboard-capture-area" ref={dashboardRef} className="fixed -left-[9999px] -top-[9999px] w-[800px] bg-white p-4">
+        {analysisResult?.dashboardData && <FinancialDashboardDisplay dashboardData={analysisResult.dashboardData} />}
+      </div>
+
 
       {analysisResult && (
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle>Relatório de Inteligência Financeira (RIF)</CardTitle>
-            {selectedFile && <CardDescription>Resultado da análise do arquivo: {selectedFile.name}</CardDescription>}
-          </CardHeader>
-          <CardContent>
-            <ScrollArea className="h-[600px] w-full rounded-md border p-4 bg-muted/50">
-              <pre className="text-sm whitespace-pre-wrap font-sans">{analysisResult.financialIntelligenceReport}</pre>
-            </ScrollArea>
-          </CardContent>
-        </Card>
+        <>
+          {analysisResult.dashboardData && (
+            <Card className="mt-6">
+              <CardHeader>
+                 <CardTitle>Dashboard de Inteligência Financeira</CardTitle>
+                 {selectedFile && <CardDescription>Visualização dos dados do arquivo: {selectedFile.name}</CardDescription>}
+              </CardHeader>
+              <CardContent>
+                  <FinancialDashboardDisplay dashboardData={analysisResult.dashboardData} />
+              </CardContent>
+            </Card>
+          )}
+          <Card className="mt-6">
+            <CardHeader>
+              <CardTitle>Relatório de Inteligência Financeira (RIF)</CardTitle>
+              {selectedFile && <CardDescription>Resultado da análise textual do arquivo: {selectedFile.name}</CardDescription>}
+            </CardHeader>
+            <CardContent>
+              <ScrollArea className="h-[600px] w-full rounded-md border p-4 bg-muted/50">
+                <pre className="text-sm whitespace-pre-wrap font-sans">{analysisResult.financialIntelligenceReport}</pre>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </>
       )}
       
        {analysisResult && !analysisResult.financialIntelligenceReport && !isLoading && (
          <Card className="mt-6">
             <CardContent className="p-6 flex flex-col items-center justify-center min-h-[200px]">
                 <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
-                <p className="text-muted-foreground text-center font-semibold">Nenhum relatório gerado.</p>
+                <p className="text-muted-foreground text-center font-semibold">Nenhum relatório textual gerado.</p>
                 <p className="text-xs text-muted-foreground mt-1 text-center">
-                  A IA pode não ter conseguido processar o arquivo ou gerar o relatório. Verifique o console para possíveis erros.
+                  A IA pode não ter conseguido processar o arquivo ou gerar o relatório textual. Verifique o console para possíveis erros.
                 </p>
             </CardContent>
         </Card>
@@ -353,3 +529,8 @@ export default function FinancialAnalysisPage() {
     </Suspense>
   )
 }
+
+```
+  </change>
+  <change>
+    <file>src/types

@@ -1,4 +1,4 @@
-
+// src/types/case.ts
 
 
 import type { AnalyzeDocumentOutput } from "@/ai/flows/analyze-document-flow";
@@ -6,7 +6,7 @@ import type { TranscribeAudioOutput } from "@/ai/flows/transcribe-audio";
 import type { ConsolidateAudioAnalysesOutput } from "@/ai/flows/consolidate-audio-analyses-flow";
 import type { AnalyzeImageOutput } from "@/ai/flows/analyze-image";
 import type { FindEntityRelationshipsOutput } from "@/ai/flows/find-entity-relationships";
-import type { AnalyzeFinancialDataOutput } from "@/ai/flows/analyze-financial-data-flow";
+import type { AnalyzeFinancialDataOutput, FinancialDashboardData } from "@/ai/flows/analyze-financial-data-flow"; // Import FinancialDashboardData
 import type { ClassifyTextForCrimesOutput } from "@/ai/flows/classify-text-for-crimes-flow"; 
 
 interface BaseAnalysis {
@@ -43,7 +43,7 @@ export interface LinkCaseAnalysis extends BaseAnalysis {
 
 export interface FinancialCaseAnalysis extends BaseAnalysis {
   type: "Financeiro";
-  data: AnalyzeFinancialDataOutput;
+  data: AnalyzeFinancialDataOutput; // This already includes dashboardData: FinancialDashboardData | undefined
 }
 
 
@@ -67,12 +67,4 @@ export interface Case {
 
 export interface AggregatedCrimeTag {
   name: string; // Keep 'name' for BarChart dataKey compatibility
-  crimeType: string;
-  count: number;
-  fill: string; 
-}
-
-// Define an API key storage type
-export interface ApiKeyStore {
-  googleApiKey?: string;
-}
+  crimeType: string

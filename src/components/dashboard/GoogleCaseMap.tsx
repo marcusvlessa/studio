@@ -25,7 +25,7 @@ const defaultCenter = {
 
 const GoogleCaseMap: React.FC<GoogleCaseMapProps> = ({
   markers,
-  center: initialCenter, // Renamed to avoid confusion with internal state if needed
+  center: initialCenter, 
   zoom = 4,
   apiKey,
 }) => {
@@ -72,7 +72,7 @@ const GoogleCaseMap: React.FC<GoogleCaseMapProps> = ({
       <div style={mapContainerStyle} className="rounded-lg shadow-md bg-muted flex flex-col items-center justify-center text-muted-foreground p-4 text-center">
         <MapPin className="h-10 w-10 mb-2 text-destructive" />
         <p className="font-semibold">Chave da API do Google Maps não configurada.</p>
-        <p className="text-xs">Configure a chave `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` no seu ambiente.</p>
+        <p className="text-xs">Configure a chave `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` no seu ambiente (ex: .env.local).</p>
       </div>
     );
   }
@@ -111,3 +111,4 @@ const GoogleCaseMap: React.FC<GoogleCaseMapProps> = ({
 };
 
 export default GoogleCaseMap;
+

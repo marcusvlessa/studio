@@ -379,7 +379,7 @@ export default function DashboardPage() {
                 <div className="flex flex-col items-center justify-center h-full text-center bg-muted rounded-lg">
                     <MapPin className="h-12 w-12 text-muted-foreground mb-2" />
                     <p className="text-muted-foreground">{!googleMapsApiKey ? "Chave API do Google Maps não configurada." : "Nenhum caso para exibir no mapa."}</p>
-                    <p className="text-xs text-muted-foreground">{!googleMapsApiKey ? "Adicione a chave em .env para ver o mapa." : "Cadastre casos para visualizá-los aqui."}</p>
+                    <p className="text-xs text-muted-foreground">{!googleMapsApiKey ? "Adicione a chave NEXT_PUBLIC_GOOGLE_MAPS_API_KEY em .env.local para ver o mapa." : "Cadastre casos para visualizá-los aqui."}</p>
                 </div>
             )}
           </CardContent>
@@ -389,3 +389,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+

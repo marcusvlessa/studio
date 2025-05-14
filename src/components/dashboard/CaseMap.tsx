@@ -1,9 +1,9 @@
 // src/components/dashboard/CaseMap.tsx
 "use client";
 
-import { useEffect, useState, useMemo } from 'react';
-import type { LatLngExpression } from 'leaflet';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { useEffect, useState, useMemo, useRef } from 'react';
+import type { LatLngExpression, Map } from 'leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { Loader2, MapPin } from 'lucide-react';
@@ -29,6 +29,27 @@ interface CaseMapProps {
   zoom?: number;
 }
 
+// Component to adjust map view when markers change
+const ChangeView = ({ markers, center, zoom }: { markers: MapMarkerData[], center: LatLngExpression, zoom: number }) => {
+  const map = useMap();
+  useEffect(() => {
+    if (markers.length > 0) {
+      const bounds = L.latLngBounds(markers.map(marker => marker.position));
+      if (bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [50, 50] });
+      } else if (markers.length === 1) {
+         map.setView(markers[0].position, zoom);
+      } else {
+        map.setView(center, zoom);
+      }
+    } else {
+      map.setView(center, zoom);
+    }
+  }, [markers, center, zoom, map]);
+  return null;
+};
+
+
 const CaseMap: React.FC<CaseMapProps> = ({
   markers,
   center = [-15.7801, -47.9292], // Default center (Brasília)
@@ -44,9 +65,9 @@ const CaseMap: React.FC<CaseMapProps> = ({
   // This forces React to unmount and remount the MapContainer, allowing Leaflet to re-initialize cleanly.
   const mapKey = useMemo(() => {
     const centerStr = Array.isArray(center) ? center.join(',') : String(center);
-    const markersStr = markers.map(m => `${m.id}_${Array.isArray(m.position) ? m.position.join(',') : String(m.position)}`).join(';');
-    return `map-${centerStr}-${zoom}-${markersStr}`;
-  }, [center, zoom, markers]);
+    // Using markers.length might be more stable than serializing all marker positions if only marker content changes.
+    return `map-${centerStr}-${zoom}-${markers.length}`;
+  }, [center, zoom, markers.length]);
 
 
   if (!isClient) {
@@ -58,7 +79,7 @@ const CaseMap: React.FC<CaseMapProps> = ({
     );
   }
 
-  if (markers.length === 0) { 
+  if (markers.length === 0 && isClient) { 
      return (
       <div style={{ height: '100%', width: '100%' }} className="rounded-lg shadow-md bg-muted flex flex-col items-center justify-center text-muted-foreground p-4 text-center">
         <MapPin className="h-10 w-10 mb-2" />
@@ -85,6 +106,7 @@ const CaseMap: React.FC<CaseMapProps> = ({
           <Popup>{marker.popupContent}</Popup>
         </Marker>
       ))}
+      <ChangeView markers={markers} center={center} zoom={zoom} />
     </MapContainer>
   );
 };

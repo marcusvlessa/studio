@@ -116,8 +116,8 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = 'TB') => 
     if (node.data.properties && Object.keys(node.data.properties).length > 0) {
         height += Math.min(3, Object.keys(node.data.properties).length) * 12;
     }
-    height = Math.min(height, 150);
-    dagreGraph.setNode(node.id, { width: 180, height: Math.max(70, height) });
+    height = Math.min(height, 150); // Max height to prevent overly tall nodes
+    dagreGraph.setNode(node.id, { width: 180, height: Math.max(70, height) }); // Ensure a minimum height
   });
 
   edges.forEach((edge) => {
@@ -136,7 +136,7 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = 'TB') => 
     };
   });
 
-  return { nodes: layoutedNodes, edges: [...edges] };
+  return { nodes: layoutedNodes, edges: [...edges] }; // Return original edges, layouting only nodes
 };
 
 // Inner component that uses React Flow hooks
@@ -146,43 +146,49 @@ function InnerGraph({ relationshipsData, identifiedEntitiesData }: LinkAnalysisG
   const { fitView, zoomIn, zoomOut } = useReactFlow();
 
   useEffect(() => {
-    console.log("[LinkAnalysisGraph] Props received - identifiedEntitiesData (raw):", identifiedEntitiesData);
-    console.log("[LinkAnalysisGraph] Props received - relationshipsData (raw):", relationshipsData);
+    console.log("[LinkAnalysisGraph] useEffect triggered. identifiedEntitiesData:", identifiedEntitiesData, "relationshipsData:", relationshipsData);
 
     if (!identifiedEntitiesData || !relationshipsData) {
-      console.log("[LinkAnalysisGraph] No data or incomplete data, setting empty nodes/edges.");
+      console.warn("[LinkAnalysisGraph] Data is null or incomplete. Setting empty nodes/edges.");
       setNodes([]);
       setEdges([]);
       return;
     }
 
-    const generatedNodes: Node<CustomNodeData>[] = identifiedEntitiesData.map(entity => ({
-      id: entity.id, 
+    // Using the IDs directly as they come from the flow (which should now be unique and sanitized)
+    const finalNodes: Node<CustomNodeData>[] = identifiedEntitiesData.map(entity => ({
+      id: entity.id, // This ID is the one generated and mapped in findEntityRelationshipsFlow
       type: 'custom',
       data: {
         label: entity.label,
         type: entity.type,
-        properties: entity.properties
+        properties: entity.properties,
       },
-      position: { x: Math.random() * 500, y: Math.random() * 500 }, 
+      position: { x: Math.random() * 400, y: Math.random() * 400 }, // Initial random position
     }));
     
-    console.log("[LinkAnalysisGraph] Generated nodes for React Flow (showing id and label):", JSON.stringify(generatedNodes.map(n => ({id: n.id, label: n.data.label})), null, 2));
+    console.log("[LinkAnalysisGraph] Final nodes prepared for React Flow (IDs should be final):", finalNodes.map(n => ({id: n.id, label: n.data.label})));
 
-    const generatedEdges: Edge<EdgeData>[] = relationshipsData
+    const nodeIds = new Set(finalNodes.map(n => n.id));
+
+    const finalEdges: Edge<EdgeData>[] = relationshipsData
     .filter(rel => {
-        const sourceExists = generatedNodes.some(n => n.id === rel.source);
-        const targetExists = generatedNodes.some(n => n.id === rel.target);
+        if (!rel.source || !rel.target) {
+            console.warn(`[LinkAnalysisGraph] Relationship from AI has missing source ('${rel.source}') or target ('${rel.target}'). Relation:`, rel);
+            return false;
+        }
+        const sourceExists = nodeIds.has(rel.source);
+        const targetExists = nodeIds.has(rel.target);
         if (!sourceExists) {
-            console.warn(`[LinkAnalysisGraph] Edge filtered out: Source node ID '${rel.source}' for relation '${rel.label}' not found in generatedNodes. Relation details:`, rel);
+            console.warn(`[LinkAnalysisGraph] Edge filtered: Source node ID '${rel.source}' for relation '${rel.label}' not found in finalNodes. Node IDs present: [${Array.from(nodeIds).join(', ')}]`);
         }
         if (!targetExists) {
-            console.warn(`[LinkAnalysisGraph] Edge filtered out: Target node ID '${rel.target}' for relation '${rel.label}' not found in generatedNodes. Relation details:`, rel);
+            console.warn(`[LinkAnalysisGraph] Edge filtered: Target node ID '${rel.target}' for relation '${rel.label}' not found in finalNodes. Node IDs present: [${Array.from(nodeIds).join(', ')}]`);
         }
-        return rel.source && rel.target && sourceExists && targetExists;
+        return sourceExists && targetExists;
     })
     .map((rel, index) => ({ 
-      id: `edge-${index}-${rel.source}-${rel.target}`, 
+      id: `edge-${index}-${rel.source}-${rel.target}`, // Ensure unique edge IDs
       source: rel.source, 
       target: rel.target, 
       label: rel.label,
@@ -201,9 +207,9 @@ function InnerGraph({ relationshipsData, identifiedEntitiesData }: LinkAnalysisG
           color: 'hsl(var(--primary))',
       } : undefined,
       style: {
-        strokeWidth: rel.strength !== undefined ? 1.5 + (rel.strength * 2.5) : 2,
-        stroke: rel.strength !== undefined && rel.strength < 0.4 ? 'hsl(var(--muted-foreground))' : 'hsl(var(--primary))',
-        opacity: rel.strength !== undefined ? 0.5 + (rel.strength * 0.5) : 0.9,
+        strokeWidth: rel.strength !== undefined ? Math.max(1, 1 + (rel.strength * 2)) : 1.5, // Ensure min stroke width
+        stroke: rel.strength !== undefined && rel.strength < 0.3 ? 'hsl(var(--muted-foreground))' : 'hsl(var(--primary))',
+        opacity: rel.strength !== undefined ? Math.max(0.3, 0.4 + (rel.strength * 0.6)) : 0.8, // Ensure min opacity
       },
       data: { 
         label: rel.label,
@@ -214,16 +220,16 @@ function InnerGraph({ relationshipsData, identifiedEntitiesData }: LinkAnalysisG
       }
     }));
     
-    console.log("[LinkAnalysisGraph] Generated edges for React Flow (showing id, source, target, label):", JSON.stringify(generatedEdges.map(e => ({id: e.id, source: e.source, target: e.target, label: e.label})), null, 2));
+    console.log("[LinkAnalysisGraph] Final edges prepared for React Flow (IDs are final node IDs):", finalEdges.map(e => ({id: e.id, source: e.source, target: e.target, label: e.label})));
 
-    if (generatedNodes.length > 0) {
-        const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(generatedNodes, generatedEdges, 'TB');
+    if (finalNodes.length > 0) {
+        const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(finalNodes, finalEdges, 'TB');
         setNodes(layoutedNodes);
         setEdges(layoutedEdges); 
         console.log("[LinkAnalysisGraph] Nodes set for React Flow:", layoutedNodes.length, "Edges set:", layoutedEdges.length);
-        setTimeout(() => fitView({ padding: 0.1, duration: 500 }), 100);
+        setTimeout(() => fitView({ padding: 0.2, duration: 500 }), 200); // Increased padding and delay
     } else {
-        console.log("[LinkAnalysisGraph] No nodes to layout.");
+        console.warn("[LinkAnalysisGraph] No nodes to layout, setting empty graph.");
         setNodes([]);
         setEdges([]);
     }
@@ -233,7 +239,7 @@ function InnerGraph({ relationshipsData, identifiedEntitiesData }: LinkAnalysisG
   const onLayout = useCallback(
     (direction: 'TB' | 'LR') => {
       if (nodes.length === 0) {
-        console.log("[LinkAnalysisGraph] onLayout called but no nodes to layout.");
+        console.warn("[LinkAnalysisGraph] onLayout called but no nodes to layout.");
         return;
       }
       const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
@@ -241,12 +247,12 @@ function InnerGraph({ relationshipsData, identifiedEntitiesData }: LinkAnalysisG
         edges,
         direction
       );
-      setNodes([...layoutedNodes]);
-      setEdges([...layoutedEdges]);
+      setNodes([...layoutedNodes]); // Ensure new array to trigger re-render
+      setEdges([...layoutedEdges]); // Ensure new array to trigger re-render
       console.log(`[LinkAnalysisGraph] Layout applied: ${direction}. Nodes: ${layoutedNodes.length}, Edges: ${layoutedEdges.length}`);
       setTimeout(() => {
-        fitView({ padding: 0.1, duration: 500 });
-      }, 50);
+        fitView({ padding: 0.2, duration: 500 }); // Increased padding
+      }, 100);
     },
     [nodes, edges, setNodes, setEdges, fitView]
   );
@@ -270,7 +276,7 @@ function InnerGraph({ relationshipsData, identifiedEntitiesData }: LinkAnalysisG
                 <Button variant="outline" size="sm" onClick={() => onLayout('LR')} title="Layout Horizontal (Esquerda para Direita)">
                     <LayoutGrid className="mr-1 h-4 w-4" /> Horizontal (LR)
                 </Button>
-                 <Button variant="outline" size="sm" onClick={() => fitView({padding: 0.1, duration: 300})} title="Ajustar à Tela">
+                 <Button variant="outline" size="sm" onClick={() => fitView({padding: 0.2, duration: 300})} title="Ajustar à Tela">
                     <Share2 className="mr-1 h-4 w-4" /> Ajustar
                 </Button>
                  <Button variant="outline" size="sm" onClick={() => zoomIn({duration:300})} title="Aumentar Zoom">
@@ -288,7 +294,7 @@ function InnerGraph({ relationshipsData, identifiedEntitiesData }: LinkAnalysisG
                     onEdgesChange={onEdgesChange}
                     nodeTypes={customNodeTypes}
                     fitView
-                    fitViewOptions={{ padding: 0.1, duration: 200}}
+                    fitViewOptions={{ padding: 0.2, duration: 200}}
                     nodesDraggable
                     nodesConnectable={false}
                     elementsSelectable
@@ -332,11 +338,10 @@ InnerGraph.displayName = "InnerGraph";
 
 
 export default function LinkAnalysisGraphWrapper(props: LinkAnalysisGraphProps) {
-  // Ensure that the props are valid before rendering the provider
   if (!props.identifiedEntitiesData || !props.relationshipsData) {
-    // Or render a placeholder, or handle more gracefully
-    console.warn("[LinkAnalysisGraphWrapper] Missing essential data for graph rendering.");
-    return null; 
+    console.warn("[LinkAnalysisGraphWrapper] Missing essential data for graph rendering. Rendering empty graph or placeholder.");
+    // Optionally, render a placeholder if data is missing
+    // return <div className="p-4 text-muted-foreground">Dados de vínculos insuficientes para renderizar o grafo.</div>;
   }
   return (
     <ReactFlowProvider>

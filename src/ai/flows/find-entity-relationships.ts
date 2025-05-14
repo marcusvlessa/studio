@@ -127,7 +127,7 @@ const prompt = ai.definePrompt({
     *   **Propriedades (Campo 'properties'):** Para CADA entidade e relacionamento, SEMPRE forneça uma STRING JSON VÁLIDA (ex: "{\"CPF\": \"123.456.789-00\", \"Status\": \"Ativo\"}"). Os valores dentro do JSON devem ser strings. Se NÃO HOUVER propriedades, envie uma string JSON vazia como "{}" ou omita o campo (o schema de output tem default "{}" para isso).
 
 2.  **Inferência e Descrição de Relacionamentos (Campo: relationships):**
-    *   Identifique relacionamentos DIRETOS e INDIRETOS (através de entidades intermediárias como Eventos ou Transações) entre as `identifiedEntities`.
+    *   Identifique relacionamentos DIRETOS e INDIRETOS (através de entidades intermediárias como Eventos ou Transações) entre as identifiedEntities.
     *   Para CADA relacionamento:
         *   'source' e 'target': **IMPERATIVO E ABSOLUTAMENTE ESSENCIAL:** Use os IDs EXATOS das entidades de origem/destino conforme definidos por VOCÊ no campo 'id' da lista \`identifiedEntities\`. O valor de 'source' e 'target' aqui DEVE ser IDÊNTICO ao valor do campo 'id' da entidade correspondente. Não use labels, não use variações, use o ID exato.
         *   'label': Descrição textual concisa do relacionamento (Ex: "Comunicou com (Telefone)", "Transferiu R$X para (PIX)", "Reside em (Endereço)", "Proprietário de (Veículo)", "Utilizou ERB (Telefone)", "É do tipo (Metadado)", "Membro de (Organização)"). Seja específico, indicando o tipo de relação se ajudar.
@@ -136,7 +136,7 @@ const prompt = ai.definePrompt({
         *   'strength': (Opcional) Confiança (0.0 a 1.0).
         *   'properties': (Opcional) STRING JSON VÁLIDA com detalhes (Ex: "{\"data_hora_inicio_texto\": \"DD/MM/AAAA HH:MM\", \"duracao_segundos_texto\": \"120\", \"valor_transferido_texto\": \"R$ 500,00\"}"). Se NÃO HOUVER, omita ou envie "{}".
 
-3.  **Criação de Entidades Implícitas:** Se, por exemplo, Pessoa A e Pessoa B são mencionadas em conexão com um "assalto dia X", crie uma entidade 'Evento/Incidente' "Assalto Dia X" (com seu próprio ID único, ex: "evento_assalto_dia_x", seguindo as regras de ID simples), e relacione Pessoa A (usando seu ID) e Pessoa B (usando seu ID) a este evento (ex: Pessoa A "participou de" evento_assalto_dia_x). Certifique-se de que esta entidade implícita também esteja listada em `identifiedEntities`.
+3.  **Criação de Entidades Implícitas:** Se, por exemplo, Pessoa A e Pessoa B são mencionadas em conexão com um "assalto dia X", crie uma entidade 'Evento/Incidente' "Assalto Dia X" (com seu próprio ID único, ex: "evento_assalto_dia_x", seguindo as regras de ID simples), e relacione Pessoa A (usando seu ID) e Pessoa B (usando seu ID) a este evento (ex: Pessoa A "participou de" evento_assalto_dia_x). Certifique-se de que esta entidade implícita também esteja listada em \`identifiedEntities\`.
 
 4.  **Resumo da Análise (Campo: analysisSummary):**
     *   Forneça um resumo textual conciso (2-5 parágrafos) da análise de vínculos.
@@ -147,7 +147,7 @@ const prompt = ai.definePrompt({
 Se a lista de 'Entidades Brutas' for pequena ou muito genérica, faça o melhor possível para extrair significado e indique no 'analysisSummary' as limitações.
 Foco na QUALIDADE e ESPECIFICIDADE dos tipos de entidade e na CLAREZA das descrições dos relacionamentos.
 **REITERAÇÃO CRUCIAL E FINAL:** A consistência dos IDs é FUNDAMENTAL. O ID que você define para uma entidade no campo 'id' da lista \`identifiedEntities\` DEVE SER EXATAMENTE O MESMO ID usado nos campos 'source' ou 'target' de QUALQUER relacionamento que envolva essa entidade. Qualquer pequena variação (maiúscula/minúscula, espaço extra, caractere diferente) fará com que o vínculo não seja visualizado corretamente.
-`
+`,
 });
 
 let entityFlowCounter = 0; // Counter for unique fallback entity IDs
@@ -176,7 +176,7 @@ const findEntityRelationshipsFlow = ai.defineFlow(
       entities: processedEntitiesInput
     };
 
-    const {output: rawOutput} = await prompt(promptInput); 
+    const {output: rawOutput} = await prompt(promptInput); // rawOutput contains properties as JSON strings
     if (!rawOutput) {
       console.error("Análise de vínculos: A IA não retornou um resultado válido.");
       return {

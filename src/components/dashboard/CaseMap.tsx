@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useRef } from 'react';
-import type { LatLngExpression, Map } from 'leaflet';
+import type { LatLngExpression, Map as LeafletMap } from 'leaflet';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -36,16 +36,24 @@ const ChangeView = ({ markers, center, zoom }: { markers: MapMarkerData[], cente
     if (markers.length > 0) {
       const bounds = L.latLngBounds(markers.map(marker => marker.position));
       if (bounds.isValid()) {
-        map.fitBounds(bounds, { padding: [50, 50] });
+         // Check if map is already zoomed to bounds to prevent potential loops
+        if (!map.getBounds().equals(bounds, 0.01)) { // 0.01 is a tolerance
+          map.fitBounds(bounds, { padding: [50, 50] });
+        }
       } else if (markers.length === 1) {
-         map.setView(markers[0].position, zoom);
-      } else {
-        map.setView(center, zoom);
+         if (map.getZoom() !== zoom || !map.getCenter().equals(L.latLng(markers[0].position))) {
+           map.setView(markers[0].position, zoom);
+         }
       }
     } else {
-      map.setView(center, zoom);
+      // If no markers, set to default center and zoom if not already there
+      if (map.getZoom() !== zoom || !map.getCenter().equals(L.latLng(center))) {
+         map.setView(center, zoom);
+      }
     }
-  }, [markers, center, zoom, map]);
+  // Omitting `map` from dependencies as `useMap` provides a stable instance from the parent MapContainer.
+  // Effect should re-run primarily based on external prop changes like markers, center, zoom.
+  }, [markers, center, zoom]);
   return null;
 };
 
@@ -56,18 +64,29 @@ const CaseMap: React.FC<CaseMapProps> = ({
   zoom = 4, // Default zoom
 }) => {
   const [isClient, setIsClient] = useState(false);
+  const mapRef = useRef<LeafletMap | null>(null);
 
   useEffect(() => {
     setIsClient(true);
+    // Cleanup function to explicitly remove the map instance when the component unmounts.
+    // This can help prevent the "Map container is already initialized" error,
+    // especially during development with Fast Refresh / HMR.
+    return () => {
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+        // console.log("Leaflet map instance explicitly removed.");
+      }
+    };
   }, []);
 
-  // Generate a key that changes if crucial map props change.
-  // This forces React to unmount and remount the MapContainer, allowing Leaflet to re-initialize cleanly.
+  // The mapKey forces React to unmount and remount MapContainer when these props change,
+  // which should help Leaflet re-initialize cleanly. Adding a timestamp ensures it's always unique
+  // if other dependencies might not change but a re-render is still problematic.
   const mapKey = useMemo(() => {
     const centerStr = Array.isArray(center) ? center.join(',') : String(center);
-    // Using markers.length might be more stable than serializing all marker positions if only marker content changes.
-    return `map-${centerStr}-${zoom}-${markers.length}`;
-  }, [center, zoom, markers.length]);
+    return `map-instance-${centerStr}-${zoom}-${markers.length}-${Date.now()}`;
+  }, [center, zoom, markers]);
 
 
   if (!isClient) {
@@ -90,12 +109,16 @@ const CaseMap: React.FC<CaseMapProps> = ({
   
   return (
     <MapContainer
-      key={mapKey} 
+      key={mapKey} // Force re-render by changing key
       center={center}
       zoom={zoom}
       scrollWheelZoom={true}
       style={{ height: '100%', width: '100%' }}
       className="rounded-lg shadow-md"
+      whenCreated={(mapInstance) => { // Callback to get the map instance
+        mapRef.current = mapInstance;
+        // console.log("Leaflet map instance created.");
+      }}
     >
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'

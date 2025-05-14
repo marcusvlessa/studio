@@ -1,6 +1,6 @@
 
 import type { LucideIcon } from "lucide-react";
-import { LayoutDashboard, FileSearch, Mic, GitFork, ImageIcon, FolderKanban, NotebookText, Landmark, Settings } from "lucide-react";
+import { LayoutDashboard, FileSearch, Mic, GitFork, ImageIcon, FolderKanban, NotebookText, Landmark, Settings, UserCog, History } from "lucide-react";
 
 export const APP_NAME = "CyberRIC"; 
 
@@ -14,7 +14,7 @@ export type NavItem = {
 export const NAV_ITEMS: NavItem[] = [
   {
     title: "Painel de Controle",
-    href: "/",
+    href: "/dashboard", // Updated from "/"
     icon: LayoutDashboard,
   },
   {
@@ -57,8 +57,18 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/settings",
     icon: Settings,
   },
+  // Admin routes (optional to include in main nav, could be separate)
+  // {
+  //   title: "Admin: Usuários",
+  //   href: "/admin/users",
+  //   icon: UserCog,
+  // },
+  // {
+  //   title: "Admin: Logs",
+  //   href: "/admin/logs",
+  //   icon: History,
+  // },
 ];
 
 export const SITE_TITLE = "CyberRIC - Sistema de Inteligência Policial"; 
 export const SITE_DESCRIPTION = "Plataforma integrada para análise de documentos, áudios, imagens, vínculos, dados financeiros e geração de Relatórios de Investigação Criminal (RIC).";
-

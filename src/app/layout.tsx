@@ -5,6 +5,7 @@ import './globals.css';
 import { AppLayout } from '@/components/layout/app-layout';
 import { Toaster } from '@/components/ui/toaster';
 import { SITE_TITLE, SITE_DESCRIPTION } from '@/config/site';
+import ClientOnlyLayout from '@/components/layout/client-only-layout';
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -27,13 +28,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
-      <body className="font-sans antialiased" suppressHydrationWarning> {/* Use Tailwind's font-sans utility which picks up the CSS variables from html tag and globals.css */}
-        <AppLayout>
+    <html lang="pt-BR" className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
+      <body className="font-sans antialiased" suppressHydrationWarning>
+        <ClientOnlyLayout>
           {children}
-        </AppLayout>
+        </ClientOnlyLayout>
         <Toaster />
       </body>
     </html>
   );
 }
+

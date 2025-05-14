@@ -1,6 +1,6 @@
 
 import type { LucideIcon } from "lucide-react";
-import { LayoutDashboard, FileSearch, Mic, GitFork, ImageIcon, FolderKanban, NotebookText } from "lucide-react";
+import { LayoutDashboard, FileSearch, Mic, GitFork, ImageIcon, FolderKanban, NotebookText, Landmark } from "lucide-react";
 
 export const APP_NAME = "CyberRIC"; 
 
@@ -18,6 +18,11 @@ export const NAV_ITEMS: NavItem[] = [
     icon: LayoutDashboard,
   },
   {
+    title: "Gestão de Casos",
+    href: "/case-management",
+    icon: FolderKanban,
+  },
+  {
     title: "Análise de Documentos",
     href: "/document-analysis",
     icon: FileSearch, 
@@ -28,19 +33,19 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Mic,
   },
   {
-    title: "Análise de Vínculos",
-    href: "/link-analysis",
-    icon: GitFork,
-  },
-  {
     title: "Análise de Imagens",
     href: "/image-analysis",
     icon: ImageIcon,
   },
   {
-    title: "Gestão de Casos",
-    href: "/case-management",
-    icon: FolderKanban,
+    title: "Análise de Vínculos",
+    href: "/link-analysis",
+    icon: GitFork,
+  },
+  {
+    title: "Análise Financeira (RIF)",
+    href: "/financial-analysis",
+    icon: Landmark, 
   },
   {
     title: "Geração de RIC",
@@ -50,5 +55,4 @@ export const NAV_ITEMS: NavItem[] = [
 ];
 
 export const SITE_TITLE = "CyberRIC - Sistema de Inteligência Policial"; 
-export const SITE_DESCRIPTION = "Plataforma integrada para análise de documentos, áudios, imagens, vínculos e geração de Relatórios de Investigação Criminal (RIC).";
-
+export const SITE_DESCRIPTION = "Plataforma integrada para análise de documentos, áudios, imagens, vínculos, dados financeiros e geração de Relatórios de Investigação Criminal (RIC).";

@@ -65,6 +65,7 @@ export interface Case {
 }
 
 export interface AggregatedCrimeTag {
+  name: string; // Keep 'name' for BarChart dataKey compatibility
   crimeType: string;
   count: number;
   fill: string; 

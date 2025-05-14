@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { FolderKanban, PlusCircle, Trash2, Edit3, ListChecks, FileSearch, Mic, GitFork, ImageIcon, NotebookText, Loader2 } from "lucide-react";
+import { FolderKanban, PlusCircle, Trash2, Edit3, ListChecks, FileSearch, Mic, GitFork, ImageIcon, NotebookText, Loader2, Landmark } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -222,6 +222,9 @@ function CaseManagementPageContent() {
                      <Button variant="outline" size="sm" asChild>
                         <Link href={`/link-analysis?caseId=${c.id}&caseName=${encodeURIComponent(c.name)}`}><GitFork className="mr-1 h-3 w-3"/>Vínculo</Link>
                      </Button>
+                     <Button variant="outline" size="sm" asChild>
+                        <Link href={`/financial-analysis?caseId=${c.id}&caseName=${encodeURIComponent(c.name)}`}><Landmark className="mr-1 h-3 w-3"/>Financeiro</Link>
+                     </Button>
                    </div>
                 </CardContent>
                 <CardFooter className="flex justify-between items-center gap-2 border-t pt-4">
@@ -254,4 +257,3 @@ export default function CaseManagementPage() {
     </Suspense>
   );
 }
-

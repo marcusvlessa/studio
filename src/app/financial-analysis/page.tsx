@@ -1,7 +1,7 @@
 // src/app/financial-analysis/page.tsx
 "use client";
 
-import { useState, type ChangeEvent, useRef, useEffect, Suspense, createRef } from "react";
+import { useState, type ChangeEvent, useRef, useEffect, Suspense, createRef, useMemo } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -529,8 +529,3 @@ export default function FinancialAnalysisPage() {
     </Suspense>
   )
 }
-
-```
-  </change>
-  <change>
-    <file>src/types

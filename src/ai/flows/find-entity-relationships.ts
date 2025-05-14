@@ -11,11 +11,18 @@
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
+// Schema to define properties objects in a way that might satisfy strict API schema validators
+// by having at least one (optional) defined property, while still allowing other string key-values.
+const CustomPropertiesSchema = z.object({
+    _internal_marker_: z.string().optional().describe("Campo interno para validação de schema, não deve ser preenchido ou gerado pela IA ativamente.")
+}).catchall(z.string());
+
+
 const EntitySchema = z.object({
   id: z.string().describe('Um ID único e SIMPLES para esta entidade (ex: "ent_1", "pessoa_joao_silva", "org_xpto_ltda"). Use apenas letras, números e underscores. ESTE ID, E SOMENTE ESTE ID, DEVE SER USADO nos campos "source" e "target" dos relacionamentos. NÃO use o label da entidade diretamente como ID nos relacionamentos; use este campo "id" que você está gerando aqui.'),
   label: z.string().describe('O valor ou nome da entidade (ex: João Silva, Empresa XYZ Ltda, (XX) XXXXX-XXXX).'),
   type: z.string().describe('O tipo inferido da entidade (ex: Pessoa, Organização, Localização, Telefone, Email, IP, Veículo, Evento, Transação Financeira, Documento, Website, Chave PIX, IMEI, ERB, Conta Bancária, Arma de Fogo, Outros). Seja o mais específico possível.'),
-  properties: z.record(z.string()).optional().default({}).describe('Um objeto JSON representando propriedades adicionais da entidade (ex: para Pessoa {"CPF": "XXX.XXX.XXX-XX", "RG": "12.345.678-9", "Nascimento_texto": "DD/MM/AAAA"}). Os valores dentro do JSON devem ser strings. Se não houver propriedades, envie um objeto JSON vazio como {} ou omita o campo.')
+  properties: CustomPropertiesSchema.optional().default({}).describe('Um objeto JSON representando propriedades adicionais da entidade (ex: para Pessoa {"CPF": "XXX.XXX.XXX-XX", "RG": "12.345.678-9", "Nascimento_texto": "DD/MM/AAAA"}). Os valores dentro do JSON devem ser strings. Se não houver propriedades, envie um objeto JSON vazio como {} ou omita o campo.')
 });
 
 const RelationshipSchema = z.object({
@@ -25,7 +32,7 @@ const RelationshipSchema = z.object({
   type: z.string().optional().describe('Um tipo categorizado de relacionamento (ex: Comunicação, Financeiro, Familiar, Profissional, Geográfico, Técnico, Posse, Social, Metadado).'),
   direction: z.enum(["direcional", "bidirecional", "nao_direcional"]).optional().default("nao_direcional").describe("A direcionalidade do relacionamento. 'direcional' de source para target, 'bidirecional' para ambos, 'nao_direcional' para associação sem direção clara."),
   strength: z.number().min(0).max(1).optional().describe('Força estimada ou confiança do relacionamento (0 a 1), se aplicável.'),
-  properties: z.record(z.string()).optional().default({}).describe('Um objeto JSON representando propriedades adicionais do relacionamento (ex: {"data_hora": "DD/MM/AAAA HH:MM", "valor_texto": "R$ XXX,XX", "frequencia_texto": "3 vezes"}). Os valores dentro do JSON devem ser strings. Se não houver, envie {} ou omita o campo.')
+  properties: CustomPropertiesSchema.optional().default({}).describe('Um objeto JSON representando propriedades adicionais do relacionamento (ex: {"data_hora": "DD/MM/AAAA HH:MM", "valor_texto": "R$ XXX,XX", "frequencia_texto": "3 vezes"}). Os valores dentro do JSON devem ser strings. Se não houver, envie {} ou omita o campo.')
 });
 
 const FindEntityRelationshipsInputSchema = z.object({
@@ -41,7 +48,7 @@ const FindEntityRelationshipsInputSchema = z.object({
 });
 export type FindEntityRelationshipsInput = z.infer<typeof FindEntityRelationshipsInputSchema>;
 
-// Schema for the prompt's direct output, where properties are expected as objects already
+// Schema for the prompt's direct output
 const FindEntityRelationshipsOutputSchema = z.object({
   identifiedEntities: z.array(EntitySchema).describe("Lista de todas as entidades únicas identificadas e classificadas pela IA a partir da entrada, com IDs únicos para ReactFlow."),
   relationships: z.array(RelationshipSchema).describe('Uma lista de relacionamentos identificados entre as entidades, usando os IDs únicos de ReactFlow.'),
@@ -66,7 +73,7 @@ export async function findEntityRelationships(
 const prompt = ai.definePrompt({
   name: 'findEntityRelationshipsPrompt',
   input: {schema: FindEntityRelationshipsInputSchema},
-  output: {schema: FindEntityRelationshipsOutputSchema}, 
+  output: {schema: FindEntityRelationshipsOutputSchema},
   prompt: `Você é um especialista em análise de inteligência e construção de grafos de vínculos, modelado a partir das capacidades do IBM i2 Analyst's Notebook. Sua tarefa é analisar uma lista de 'Entidades Brutas' fornecidas, identificar entidades distintas, classificá-las e, o mais importante, inferir e descrever os relacionamentos entre elas. Se necessário, crie entidades implícitas (como Eventos ou Transações) para conectar outras entidades de forma significativa.
 
 **Contexto da Análise:** {{{analysisContext}}}
@@ -110,7 +117,7 @@ const prompt = ai.definePrompt({
             *   **Tipo de Arquivo:** (Ex: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet). Se uma das entidades brutas for um tipo MIME, identifique-a como tal.
             *   **Outros:** Para entidades que não se encaixam acima, seja específico (ex: "Produto Químico", "Droga", "Apelido").
     *   **Dados Tabulares:** Se uma 'Entidade Bruta' parecer ser uma linha de dados tabulares (ex: "João Silva,(XX)XXXXX-XXXX,XXX.XXX.XXX-XX"), decomponha-a em múltiplas entidades (Pessoa "João Silva", Telefone "(XX)XXXXX-XXXX", Documento "CPF XXX.XXX.XXX-XX") CADA UMA COM SEU PRÓPRIO 'id' ÚNICO (seguindo as regras de ID simples), e INFERA relacionamentos entre elas (ex: João Silva "possui" Telefone, João Silva "possui" CPF).
-    *   **Propriedades (Campo 'properties'):** Para CADA entidade e relacionamento, SEMPRE forneça um objeto JSON (ex: {"CPF": "123.456.789-00", "Status": "Ativo"}). Os valores dentro do JSON devem ser strings. Se NÃO HOUVER propriedades, envie um objeto JSON vazio como {} ou omita o campo (o schema de output tem default {} para isso).
+    *   **Propriedades (Campo 'properties'):** Para CADA entidade e relacionamento, se houver propriedades, forneça um objeto JSON com pares chave-valor (ex: {"CPF": "123.456.789-00", "Status": "Ativo"}). Os valores dentro do JSON devem ser strings. Se NÃO HOUVER propriedades para uma entidade ou relacionamento, OMITA COMPLETAMENTE o campo 'properties' para esse item específico. Não envie um objeto JSON vazio como {}.
 
 2.  **Inferência e Descrição de Relacionamentos (Campo: relationships):**
     *   Identifique relacionamentos DIRETOS e INDIRETOS (através de entidades intermediárias como Eventos ou Transações) entre as identifiedEntities.
@@ -120,7 +127,7 @@ const prompt = ai.definePrompt({
         *   'type': (Opcional) Categorize (Ex: Comunicação, Financeiro, Familiar, Profissional, Propriedade, Localização, Técnico, Participação em Evento, Social, Metadado).
         *   'direction': (Opcional) "direcional", "bidirecional", ou "nao_direcional". Se "direcional", indique o fluxo (ex: de source para target).
         *   'strength': (Opcional) Confiança (0.0 a 1.0).
-        *   'properties': (Opcional) Objeto JSON com detalhes (Ex: {"data_hora_inicio_texto": "DD/MM/AAAA HH:MM", "duracao_segundos_texto": "120", "valor_transferido_texto": "R$ 500,00"}). Se NÃO HOUVER, omita ou envie {}.
+        *   'properties': (Opcional) Se houver propriedades, forneça um objeto JSON com detalhes (Ex: {"data_hora_inicio_texto": "DD/MM/AAAA HH:MM", "duracao_segundos_texto": "120", "valor_transferido_texto": "R$ 500,00"}). Se NÃO HOUVER, OMITA COMPLETAMENTE o campo 'properties'.
 
 3.  **Criação de Entidades Implícitas:** Se, por exemplo, Pessoa A e Pessoa B são mencionadas em conexão com um "assalto dia X", crie uma entidade 'Evento/Incidente' "Assalto Dia X" (com seu próprio ID único, ex: "evento_assalto_dia_x", seguindo as regras de ID simples), e relacione Pessoa A (usando seu ID) e Pessoa B (usando seu ID) a este evento (ex: Pessoa A "participou de" evento_assalto_dia_x). Certifique-se de que esta entidade implícita também esteja listada em identifiedEntities.
 
@@ -142,11 +149,11 @@ const findEntityRelationshipsFlow = ai.defineFlow(
   {
     name: 'findEntityRelationshipsFlow',
     inputSchema: FindEntityRelationshipsInputSchema,
-    outputSchema: FindEntityRelationshipsOutputSchema, 
+    outputSchema: FindEntityRelationshipsOutputSchema,
   },
   async (input: FindEntityRelationshipsInput): Promise<FindEntityRelationshipsOutput> => {
     entityFlowCounter = 0; // Reset counter for each flow run
-    
+
     const MAX_ENTITIES_TO_PROCESS = 150;
     let processedEntitiesInput = input.entities;
     let analysisSummaryPrefix = "";
@@ -156,7 +163,7 @@ const findEntityRelationshipsFlow = ai.defineFlow(
       analysisSummaryPrefix = `AVISO: A lista de entidades fornecida (${input.entities.length}) excedeu o limite de ${MAX_ENTITIES_TO_PROCESS}. A análise foi realizada nos primeiros ${MAX_ENTITIES_TO_PROCESS} itens. `;
       console.log(`Análise de vínculos: Entrada truncada para ${MAX_ENTITIES_TO_PROCESS} entidades.`);
     }
-    
+
     const promptInput = {
       ...input,
       entities: processedEntitiesInput
@@ -171,24 +178,24 @@ const findEntityRelationshipsFlow = ai.defineFlow(
         analysisSummary: analysisSummaryPrefix + "A IA não retornou um resultado válido para a análise de vínculos."
       };
     }
-    
+
     console.log("[findEntityRelationshipsFlow] Saída bruta da IA recebida:", JSON.stringify(rawOutput, null, 2));
 
     const aiEntityIdToReactFlowIdMap = new Map<string, string>();
-    const reactFlowIdUsageMap = new Map<string, number>(); 
+    const reactFlowIdUsageMap = new Map<string, number>();
 
-    const parsedIdentifiedEntities: FindEntityRelationshipsOutput['identifiedEntities'] = rawOutput.identifiedEntities
-      .filter(entity => !(entity.label.startsWith("AVISO DO SISTEMA:") || entity.label.startsWith("Impossibilidade de análise"))) 
+    const parsedIdentifiedEntities: FindEntityRelationshipsOutput['identifiedEntities'] = (rawOutput.identifiedEntities || [])
+      .filter(entity => entity && entity.label && !(entity.label.startsWith("AVISO DO SISTEMA:") || entity.label.startsWith("Impossibilidade de análise")))
       .map((entity, idx) => {
         const aiProvidedId = (typeof entity.id === 'string' && entity.id.trim() !== "") ? entity.id.trim() : null;
-        const aiOriginalId = aiProvidedId || `entidade_sem_id_original_ia_${entityFlowCounter++}_${entity.label.substring(0,10).replace(/[^a-zA-Z0-9_]/g, '')}`;
+        const aiOriginalId = aiProvidedId || `entidade_sem_id_original_ia_${entityFlowCounter++}_${(entity.label || 'nolabel').substring(0,10).replace(/[^a-zA-Z0-9_]/g, '')}`;
 
         if (!aiProvidedId) {
             console.warn(`[findEntityRelationshipsFlow] Entidade da IA (Label: ${entity.label}, Index: ${idx}) veio SEM ID ou com ID VAZIO! Usando ID de fallback para mapeamento: ${aiOriginalId}. O prompt da IA DEVE fornecer um 'id' válido para cada 'identifiedEntities'.`);
         }
-        
+
         let baseReactFlowId = aiOriginalId.replace(/[^a-zA-Z0-9_]/g, '_').substring(0, 50);
-        if (baseReactFlowId.length === 0 || /^\\W+$/.test(baseReactFlowId) || baseReactFlowId.startsWith('_')) { 
+        if (baseReactFlowId.length === 0 || /^\\W+$/.test(baseReactFlowId) || baseReactFlowId.startsWith('_')) {
             baseReactFlowId = `entidade_gerada_${entityFlowCounter++}`;
         }
 
@@ -198,22 +205,33 @@ const findEntityRelationshipsFlow = ai.defineFlow(
           finalReactFlowId = `${baseReactFlowId}_${count}`;
         }
         reactFlowIdUsageMap.set(baseReactFlowId, count + 1);
-      
+
         aiEntityIdToReactFlowIdMap.set(aiOriginalId, finalReactFlowId);
 
-        // Properties are already objects in rawOutput due to updated PromptOutputSchema
-        const parsedProperties = entity.properties || {};
+        // Ensure properties is an object, defaulting to empty if undefined or not an object
+        let parsedProperties: Record<string, string> = {};
+        if (typeof entity.properties === 'object' && entity.properties !== null && !Array.isArray(entity.properties)) {
+            // Convert all property values to strings
+            Object.entries(entity.properties).forEach(([key, value]) => {
+                if (key !== '_internal_marker_') { // Exclude dummy field if present
+                    parsedProperties[key] = String(value);
+                }
+            });
+        } else if (entity.properties) {
+            console.warn(`[findEntityRelationshipsFlow] 'properties' for entity '${entity.label}' was not a valid object:`, entity.properties);
+        }
 
-        return { ...entity, id: finalReactFlowId, properties: parsedProperties }; 
+
+        return { ...entity, id: finalReactFlowId, properties: parsedProperties };
     });
-    
+
     console.log("[findEntityRelationshipsFlow] Entidades parseadas para ReactFlow (mostrando id, label, id_original_IA_mapeado_de):", JSON.stringify(parsedIdentifiedEntities.map(e => ({id: e.id, label: e.label, id_original_IA_mapeado_de: Array.from(aiEntityIdToReactFlowIdMap.entries()).find(entry => entry[1] === e.id)?.[0] || 'N/A'})), null, 2));
     console.log("[findEntityRelationshipsFlow] Mapa de IDs (ID IA Original/Fallback -> ID ReactFlow):", JSON.stringify(Array.from(aiEntityIdToReactFlowIdMap.entries()), null, 2));
 
-    const parsedRelationships: FindEntityRelationshipsOutput['relationships'] = rawOutput.relationships
+    const parsedRelationships: FindEntityRelationshipsOutput['relationships'] = (rawOutput.relationships || [])
     .map((rel, index) => {
-        if (typeof rel.source !== 'string' || rel.source.trim() === "") {
-            console.warn(`[findEntityRelationshipsFlow] Relacionamento (Label: ${rel.label}, Index: ${index}) da IA veio com 'source' inválido ou vazio. Relacionamento ignorado.`);
+        if (!rel || typeof rel.source !== 'string' || rel.source.trim() === "") {
+            console.warn(`[findEntityRelationshipsFlow] Relacionamento (Label: ${rel?.label || 'N/A'}, Index: ${index}) da IA veio com 'source' inválido ou vazio. Relacionamento ignorado.`);
             return null;
         }
         if (typeof rel.target !== 'string' || rel.target.trim() === "") {
@@ -221,9 +239,9 @@ const findEntityRelationshipsFlow = ai.defineFlow(
             return null;
         }
 
-        const reactFlowSourceId = aiEntityIdToReactFlowIdMap.get(rel.source.trim()); 
-        const reactFlowTargetId = aiEntityIdToReactFlowIdMap.get(rel.target.trim()); 
-        
+        const reactFlowSourceId = aiEntityIdToReactFlowIdMap.get(rel.source.trim());
+        const reactFlowTargetId = aiEntityIdToReactFlowIdMap.get(rel.target.trim());
+
         if (!reactFlowSourceId) {
             console.warn(`[findEntityRelationshipsFlow] ID de origem do relacionamento IA ('${rel.source}') não encontrado no mapa de IDs para o relacionamento: '${rel.label}'. Chaves do mapa: [${Array.from(aiEntityIdToReactFlowIdMap.keys()).join(', ')}]. Relacionamento ignorado.`);
             return null;
@@ -232,24 +250,32 @@ const findEntityRelationshipsFlow = ai.defineFlow(
             console.warn(`[findEntityRelationshipsFlow] ID de destino do relacionamento IA ('${rel.target}') não encontrado no mapa de IDs para o relacionamento: '${rel.label}'. Chaves do mapa: [${Array.from(aiEntityIdToReactFlowIdMap.keys()).join(', ')}]. Relacionamento ignorado.`);
             return null;
         }
-        
-        // Properties are already objects in rawOutput
-        const parsedRelProperties = rel.properties || {};
-        
+
+        let parsedRelProperties: Record<string, string> = {};
+         if (typeof rel.properties === 'object' && rel.properties !== null && !Array.isArray(rel.properties)) {
+            Object.entries(rel.properties).forEach(([key, value]) => {
+                 if (key !== '_internal_marker_') {
+                    parsedRelProperties[key] = String(value);
+                }
+            });
+        } else if (rel.properties){
+             console.warn(`[findEntityRelationshipsFlow] 'properties' for relationship '${rel.label}' was not a valid object:`, rel.properties);
+        }
+
+
         return {
-            // id: `edge-${index}-${reactFlowSourceId}-${reactFlowTargetId}`, // Ensure unique edge IDs
-            ...rel, // Spread the original relationship to keep all its fields like type, direction, strength
-            id: rel.id || `edge-${index}-${reactFlowSourceId}-${reactFlowTargetId}`, // Use AI provided ID or generate one
+            ...rel,
+            id: rel.id || `edge-${index}-${reactFlowSourceId}-${reactFlowTargetId}`,
             source: reactFlowSourceId,
             target: reactFlowTargetId,
             properties: parsedRelProperties,
         };
     })
-    .filter((edge): edge is NonNullable<typeof edge> => edge !== null) 
-    .filter(edge => { 
+    .filter((edge): edge is NonNullable<typeof edge> => edge !== null)
+    .filter(edge => {
         const sourceNodeExists = parsedIdentifiedEntities.some(node => node.id === edge.source);
         const targetNodeExists = parsedIdentifiedEntities.some(node => node.id === edge.target);
-        
+
         if (!sourceNodeExists) {
             console.warn(`[findEntityRelationshipsFlow] Filtrando aresta (APÓS MAPEAMENTO) devido a nó de origem ('${edge.source}') ausente para o relacionamento: '${edge.label}'. Verifique se a entidade de origem foi corretamente identificada e mapeada.`);
         }
@@ -263,7 +289,7 @@ const findEntityRelationshipsFlow = ai.defineFlow(
 
     const finalSummary = analysisSummaryPrefix + (rawOutput.analysisSummary || "Análise de vínculos concluída. Nenhum resumo adicional fornecido pela IA.");
     console.log("[findEntityRelationshipsFlow] Resumo final:", finalSummary);
-    
+
     if (parsedIdentifiedEntities.length > 0 && parsedRelationships.length === 0 && rawOutput.relationships && rawOutput.relationships.length > 0) {
         console.warn("[findEntityRelationshipsFlow] A IA retornou relacionamentos, mas NENHUM pôde ser mapeado ou validado para o grafo. Verifique os logs de 'ID de origem/destino... não encontrado' ou 'Filtrando aresta APÓS MAPEAMENTO'. Isto geralmente indica que a IA não usou os IDs corretos nos campos 'source' e 'target' dos relacionamentos, ou não definiu as entidades correspondentes aos IDs usados.");
     } else if (parsedIdentifiedEntities.length > 0 && parsedRelationships.length > 0) {

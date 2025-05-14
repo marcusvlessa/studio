@@ -35,33 +35,21 @@ const CaseMap: React.FC<CaseMapProps> = ({
   zoom = 4, // Default zoom
 }) => {
   const [isClient, setIsClient] = useState(false);
-  const [canRenderMap, setCanRenderMap] = useState(false); // New state
 
   useEffect(() => {
     setIsClient(true);
   }, []);
 
-  // Delay map rendering slightly after client confirmation
-  // This can help with initialization race conditions, especially in dev/HMR
-  useEffect(() => {
-    if (isClient) {
-      const timer = setTimeout(() => {
-        setCanRenderMap(true);
-      }, 0); // A small delay, even 0ms, defers execution to the next event loop tick
-      return () => clearTimeout(timer);
-    }
-  }, [isClient]);
-
   // Generate a key that changes if crucial map props change.
   // This forces React to unmount and remount the MapContainer, allowing Leaflet to re-initialize cleanly.
   const mapKey = useMemo(() => {
-    const centerKey = Array.isArray(center) ? center.join(',') : String(center); // More robust stringification for center
-    const markersKeyPart = markers.map(m => `${m.id}_${Array.isArray(m.position) ? m.position.join(',') : String(m.position)}`).join(';');
-    return `map-${centerKey}-${zoom}-${markersKeyPart}`;
+    const centerStr = Array.isArray(center) ? center.join(',') : String(center);
+    const markersStr = markers.map(m => `${m.id}_${Array.isArray(m.position) ? m.position.join(',') : String(m.position)}`).join(';');
+    return `map-${centerStr}-${zoom}-${markersStr}`;
   }, [center, zoom, markers]);
 
 
-  if (!canRenderMap) {
+  if (!isClient) {
     return (
       <div style={{ height: '100%', width: '100%' }} className="rounded-lg shadow-md bg-muted flex items-center justify-center text-muted-foreground">
         <Loader2 className="h-6 w-6 animate-spin mr-2" />

@@ -9,6 +9,7 @@ import { BarChart, LineChart, Bar, CartesianGrid, XAxis, YAxis, Line, Cell, Resp
 import { useToast } from "@/hooks/use-toast";
 import type { Case, CaseAnalysis, AggregatedCrimeTag, MapMarkerData } from "@/types/case";
 import type { ClassifyTextForCrimesOutput } from "@/ai/flows/classify-text-for-crimes-flow";
+import type { LatLngExpression } from 'leaflet'; // Import LatLngExpression
 
 // Dynamically import the LeafletCaseMap component
 const LeafletCaseMap = dynamic(() => import("@/components/dashboard/LeafletCaseMap"), {
@@ -33,6 +34,8 @@ const crimeColors: string[] = [
   "hsl(var(--chart-5))",
   "hsl(var(--accent))",
 ];
+
+const defaultCenterMap: LatLngExpression = [-15.7801, -47.9292]; // Brasília
 
 
 export default function DashboardPage() {
@@ -158,26 +161,31 @@ export default function DashboardPage() {
     };
 
     return cases.map((caseItem, index) => {
+      // Generate pseudo-random offsets based on case ID and index to spread markers
+      // This is a deterministic way to get varied locations for demo purposes.
       const idPart1Str = caseItem.id.length >= 2 ? caseItem.id.substring(0, 2) : "00";
       const idPart2Str = caseItem.id.length >= 4 ? caseItem.id.substring(2, 4) : "00";
 
       const idNum1 = parseHexSafe(idPart1Str);
       const idNum2 = parseHexSafe(idPart2Str);
 
-      const baseLat = -15.7801; // Brasília
+      const baseLat = -15.7801; // Brasília, Brazil
       const baseLng = -47.9292;
 
-      const latOffset = ((index * 13) % 100 / 100 - 0.5) * 5 + (idNum1 / 255 - 0.5) * 1; 
-      const lngOffset = ((index * 29) % 100 / 100 - 0.5) * 5 + (idNum2 / 255 - 0.5) * 1;
+      // Create varied offsets. Multipliers ensure wider spread.
+      // Modulo operations help to distribute points more evenly.
+      const latOffset = ((index * 137 + idNum1) % 1000 / 1000 - 0.5) * 8; // Spread over approx +/- 4 degrees
+      const lngOffset = ((index * 251 + idNum2) % 1000 / 1000 - 0.5) * 8; // Spread over approx +/- 4 degrees
       
       let lat = baseLat + latOffset;
       let lng = baseLng + lngOffset;
 
-      lat = Math.max(-90, Math.min(90, lat));
-      lng = Math.max(-180, Math.min(180, lng));
+      // Clamp to valid lat/lng ranges
+      lat = Math.max(-85, Math.min(85, lat)); // Leaflet prefers slightly less than +/-90
+      lng = Math.max(-179, Math.min(179, lng)); // Leaflet prefers slightly less than +/-180
       
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-        console.warn(`Coordenadas inválidas geradas para o caso ${caseItem.id}: lat=${lat}, lng=${lng}. Padrão para base.`);
+        // Fallback if something went wrong with calculation
         lat = baseLat + (Math.random() - 0.5) * 0.1;
         lng = baseLng + (Math.random() - 0.5) * 0.1;
       }
@@ -327,16 +335,16 @@ export default function DashboardPage() {
               {aggregatedCrimeData.length > 0 ? (
                 <ChartContainer config={chartConfigCrimeTypes} className="h-[300px] w-full">
                    <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={aggregatedCrimeData} layout="vertical" margin={{ right: 20}}>
+                    <BarChart data={aggregatedCrimeData} layout="vertical" margin={{ right: 20, left: 20 }}>
                       <CartesianGrid horizontal={false} />
-                      <YAxis dataKey="crimeType" type="category" tickLine={false} axisLine={false} tickMargin={10} width={150} interval={0}/>
+                      <YAxis dataKey="crimeType" type="category" tickLine={false} axisLine={false} tickMargin={10} width={180} interval={0} style={{fontSize: '0.75rem'}}/>
                       <XAxis dataKey="count" type="number" hide />
                       <ChartTooltip 
                         cursor={false} 
                         content={<ChartTooltipContent formatter={(value) => `${value} ocorrências`} />} 
                       />
                        <ChartLegend content={<ChartLegendContent />} />
-                       <Bar dataKey="count" radius={5} barSize={20}>
+                       <Bar dataKey="count" radius={5} barSize={18}>
                         {aggregatedCrimeData.map((entry) => (
                           <Cell key={`cell-${entry.crimeType}`} fill={entry.fill} name={entry.crimeType}/>
                         ))}
@@ -360,7 +368,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="h-[350px] p-0">
              {cases.length > 0 ? (
-                <LeafletCaseMap markers={mapMarkers} />
+                <LeafletCaseMap markers={mapMarkers} center={defaultCenterMap} zoom={3} /> 
              ) : (
                 <div className="flex flex-col items-center justify-center h-full text-center bg-muted rounded-lg">
                     <MapPin className="h-12 w-12 text-muted-foreground mb-2" />

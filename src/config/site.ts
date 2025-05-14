@@ -61,3 +61,4 @@ export const NAV_ITEMS: NavItem[] = [
 
 export const SITE_TITLE = "CyberRIC - Sistema de Inteligência Policial"; 
 export const SITE_DESCRIPTION = "Plataforma integrada para análise de documentos, áudios, imagens, vínculos, dados financeiros e geração de Relatórios de Investigação Criminal (RIC).";
+

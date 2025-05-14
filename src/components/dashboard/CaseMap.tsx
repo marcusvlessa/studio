@@ -36,63 +36,64 @@ const ChangeView = ({ markers, center, zoom }: { markers: MapMarkerData[], cente
     if (markers.length > 0) {
       const bounds = L.latLngBounds(markers.map(marker => marker.position));
       if (bounds.isValid()) {
-         // Check if map is already zoomed to bounds to prevent potential loops
-        if (!map.getBounds().equals(bounds, 0.01)) { // 0.01 is a tolerance
+        if (!map.getBounds().equals(bounds, 0.01)) {
           map.fitBounds(bounds, { padding: [50, 50] });
         }
       } else if (markers.length === 1) {
-         if (map.getZoom() !== zoom || !map.getCenter().equals(L.latLng(markers[0].position))) {
-           map.setView(markers[0].position, zoom);
+         // Ensure marker position is valid LatLng before comparing or setting view
+         const markerPosition = L.latLng(markers[0].position);
+         if (map.getZoom() !== zoom || !map.getCenter().equals(markerPosition)) {
+           map.setView(markerPosition, zoom);
          }
       }
     } else {
-      // If no markers, set to default center and zoom if not already there
-      if (map.getZoom() !== zoom || !map.getCenter().equals(L.latLng(center))) {
-         map.setView(center, zoom);
+      const currentCenter = L.latLng(center);
+      if (map.getZoom() !== zoom || !map.getCenter().equals(currentCenter)) {
+         map.setView(currentCenter, zoom);
       }
     }
-  // Omitting `map` from dependencies as `useMap` provides a stable instance from the parent MapContainer.
-  // Effect should re-run primarily based on external prop changes like markers, center, zoom.
-  }, [markers, center, zoom]);
+  }, [markers, center, zoom, map]);
   return null;
 };
 
 
 const CaseMap: React.FC<CaseMapProps> = ({
   markers,
-  center = [-15.7801, -47.9292], // Default center (Brasília)
-  zoom = 4, // Default zoom
+  center = [-15.7801, -47.9292], 
+  zoom = 4, 
 }) => {
   const [isClient, setIsClient] = useState(false);
   const mapRef = useRef<LeafletMap | null>(null);
 
   useEffect(() => {
     setIsClient(true);
-    // Cleanup function to explicitly remove the map instance when the component unmounts.
-    // This can help prevent the "Map container is already initialized" error,
-    // especially during development with Fast Refresh / HMR.
+    // This effect is for the CaseMap component itself
     return () => {
+      // This cleanup runs when CaseMap unmounts
       if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
-        // console.log("Leaflet map instance explicitly removed.");
+        // console.log("CaseMap unmounting, attempting to remove map instance:", mapRef.current);
+        try {
+          mapRef.current.remove();
+        } catch (e) {
+          // console.error("Error removing map instance in CaseMap cleanup:", e);
+        }
+        mapRef.current = null; 
       }
     };
   }, []);
 
-  // The mapKey forces React to unmount and remount MapContainer when these props change,
-  // which should help Leaflet re-initialize cleanly. Adding a timestamp ensures it's always unique
-  // if other dependencies might not change but a re-render is still problematic.
+  // Stable key to force re-render MapContainer only when essential props change.
+  // This helps prevent the "Map container is already initialized" error during HMR.
   const mapKey = useMemo(() => {
-    const centerStr = Array.isArray(center) ? center.join(',') : String(center);
-    return `map-instance-${centerStr}-${zoom}-${markers.length}-${Date.now()}`;
+    const centerStr = Array.isArray(center) && center.length === 2 ? `${center[0].toString()},${center[1].toString()}` : String(center);
+    const markersKeyPart = markers.map(m => m.id).join('-');
+    return `map-instance-${centerStr}-${zoom}-${markersKeyPart}`;
   }, [center, zoom, markers]);
-
 
   if (!isClient) {
     return (
       <div style={{ height: '100%', width: '100%' }} className="rounded-lg shadow-md bg-muted flex items-center justify-center text-muted-foreground">
-        <Loader2 className="h-6 w-6 animate-spin mr-2" />
+        <Loader2 className="h-6 w-6 animate-spin mr-2 text-primary" />
         Carregando Mapa...
       </div>
     );
@@ -101,7 +102,7 @@ const CaseMap: React.FC<CaseMapProps> = ({
   if (markers.length === 0 && isClient) { 
      return (
       <div style={{ height: '100%', width: '100%' }} className="rounded-lg shadow-md bg-muted flex flex-col items-center justify-center text-muted-foreground p-4 text-center">
-        <MapPin className="h-10 w-10 mb-2" />
+        <MapPin className="h-10 w-10 mb-2 text-primary" />
         <p className="text-sm">Nenhum marcador para exibir no mapa.</p>
       </div>
     );
@@ -109,15 +110,15 @@ const CaseMap: React.FC<CaseMapProps> = ({
   
   return (
     <MapContainer
-      key={mapKey} // Force re-render by changing key
+      key={mapKey} 
       center={center}
       zoom={zoom}
       scrollWheelZoom={true}
       style={{ height: '100%', width: '100%' }}
       className="rounded-lg shadow-md"
-      whenCreated={(mapInstance) => { // Callback to get the map instance
+      whenCreated={(mapInstance) => { 
         mapRef.current = mapInstance;
-        // console.log("Leaflet map instance created.");
+        // console.log("Leaflet map instance created/recreated for key:", mapKey);
       }}
     >
       <TileLayer

@@ -1,6 +1,6 @@
 
 import type { LucideIcon } from "lucide-react";
-import { LayoutDashboard, FileSearch, Mic, GitFork, ImageIcon, FolderKanban, NotebookText, Landmark } from "lucide-react";
+import { LayoutDashboard, FileSearch, Mic, GitFork, ImageIcon, FolderKanban, NotebookText, Landmark, Settings } from "lucide-react";
 
 export const APP_NAME = "CyberRIC"; 
 
@@ -51,6 +51,11 @@ export const NAV_ITEMS: NavItem[] = [
     title: "Geração de RIC",
     href: "/ric-generation",
     icon: NotebookText,
+  },
+   {
+    title: "Configurações",
+    href: "/settings",
+    icon: Settings,
   },
 ];
 

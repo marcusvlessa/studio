@@ -2,6 +2,7 @@
   "name": "nextn",
   "version": "0.1.0",
   "private": true,
+  "main": "electron.js",
   "scripts": {
     "dev": "next dev --turbopack -p 9002",
     "genkit:dev": "genkit start -- tsx src/ai/dev.ts",
@@ -9,10 +10,11 @@
     "build": "next build && npm run build:flows",
     "build:flows": "node src/ai/build.mjs",
     "export": "next export",
-    "start": "node electron.js",
+    "start": "npm run build && node electron.js",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "electron:build": "npm run build && npm run export && electron-builder"
+    "electron:build": "npm run build && npm run export && electron-builder",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@genkit-ai/googleai": "^1.8.0",
@@ -48,6 +50,8 @@
     "electron-store": "^10.0.0",
     "firebase": "^11.7.0",
     "genkit": "^1.8.0",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^2.5.1",
     "lucide-react": "^0.475.0",
     "next": "15.2.3",
     "patch-package": "^8.0.0",
@@ -63,6 +67,7 @@
   },
   "devDependencies": {
     "@types/dagre": "^0.7.52",
+    "@types/jspdf": "^2.0.0",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
@@ -72,5 +77,37 @@
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
     "typescript": "^5"
+  },
+  "build": {
+    "appId": "com.example.cyberric",
+    "productName": "CyberRIC",
+    "copyright": "Copyright © 2024 ${author}",
+    "files": [
+      "dist/**/*",
+      "electron.js",
+      "preload.js",
+      "package.json",
+      "out/**/*",
+      "public/**/*",
+      "src/ai/dev.js",
+      "dist_flows/**/*"
+    ],
+    "directories": {
+      "buildResources": "assets",
+      "output": "release"
+    },
+    "mac": {
+      "category": "public.app-category.utilities"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm"
+      ]
+    }
   }
 }

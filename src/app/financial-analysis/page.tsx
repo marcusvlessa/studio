@@ -10,12 +10,24 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { Landmark, Upload, RotateCcw, Search, Loader2, FileText, Info, AlertCircle, FolderKanban, CheckCircle } from "lucide-react";
+import { Landmark, Upload, RotateCcw, Search, Loader2, FileText, Info, AlertCircle, FolderKanban, Download, FileDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { analyzeFinancialData, type AnalyzeFinancialDataInput, type AnalyzeFinancialDataOutput } from "@/ai/flows/analyze-financial-data-flow";
 import { Alert as ShadAlert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import type { FinancialCaseAnalysis } from "@/types/case";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import jsPDF from 'jspdf';
+import type { PdfHeaderConfig } from '@/types/settings'; // Assuming you create this type
+
+declare global {
+  interface Window {
+    electronAPI?: {
+      getPdfHeaderConfig: () => Promise<PdfHeaderConfig | null>;
+      // Add other Electron API methods if needed
+    };
+  }
+}
+
 
 function FinancialAnalysisContent() {
   const searchParams = useSearchParams();
@@ -101,7 +113,7 @@ function FinancialAnalysisContent() {
       if (currentProgress <= 90) { 
         setProgress(currentProgress);
       }
-    }, 500); // Slower interval for financial analysis
+    }, 500); 
 
     try {
       const rifTextContent = await selectedFile.text();
@@ -139,6 +151,85 @@ function FinancialAnalysisContent() {
     }
     toast({ title: "Reiniciado", description: "Arquivos e resultados da análise financeira foram limpos." });
   };
+
+  const handleDownloadPdf = async () => {
+    if (!analysisResult?.financialIntelligenceReport || !selectedFile) {
+      toast({ variant: "destructive", title: "Erro", description: "Nenhum relatório para baixar." });
+      return;
+    }
+
+    let pdfHeaderConfig: PdfHeaderConfig | null = null;
+    if (typeof window !== 'undefined' && window.electronAPI?.getPdfHeaderConfig) {
+        try {
+            pdfHeaderConfig = await window.electronAPI.getPdfHeaderConfig();
+        } catch (error) {
+            console.error("Failed to load PDF header config from Electron store:", error);
+            toast({ variant: "destructive", title: "Erro de Configuração", description: "Não foi possível carregar a configuração do cabeçalho do PDF."})
+        }
+    }
+
+
+    const doc = new jsPDF({
+      orientation: 'p',
+      unit: 'mm',
+      format: 'a4',
+    });
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 15;
+    const contentWidth = pageWidth - 2 * margin;
+    let yPosition = margin;
+
+    // Header function
+    const addHeader = () => {
+      if (pdfHeaderConfig?.logoBase64) {
+        try {
+          const imgProps = doc.getImageProperties(pdfHeaderConfig.logoBase64);
+          const aspectRatio = imgProps.width / imgProps.height;
+          let logoHeight = 15; // Max logo height
+          let logoWidth = logoHeight * aspectRatio;
+          if (logoWidth > 40) { // Max logo width
+            logoWidth = 40;
+            logoHeight = logoWidth / aspectRatio;
+          }
+          doc.addImage(pdfHeaderConfig.logoBase64, 'PNG', margin, margin -10, logoWidth, logoHeight);
+        } catch (e) {
+            console.error("Error adding logo to PDF:", e);
+            // Fallback text if logo fails
+            doc.setFontSize(10);
+            doc.text("Logo Indisponível", margin, margin - 5);
+        }
+      }
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text(pdfHeaderConfig?.headerText || `Relatório - ${selectedFile.name}`, pageWidth / 2, margin, { align: 'center' });
+      yPosition = margin + 15; // Initial yPosition after header
+      doc.setLineWidth(0.5);
+      doc.line(margin, yPosition - 5, pageWidth - margin, yPosition - 5); // Header underline
+      yPosition += 5;
+    };
+
+    addHeader();
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+
+    const reportText = analysisResult.financialIntelligenceReport;
+    const lines = doc.splitTextToSize(reportText, contentWidth);
+
+    lines.forEach((line: string) => {
+      if (yPosition + 10 > pageHeight - margin) { // Check if new page is needed (10 is approx line height)
+        doc.addPage();
+        addHeader(); // Add header to new page
+      }
+      doc.text(line, margin, yPosition);
+      yPosition += 7; // Increment y position for next line (adjust as needed for line spacing)
+    });
+
+    doc.save(`RIF_${selectedFile.name.replace(/\.[^/.]+$/, "")}.pdf`);
+    toast({ title: "Download do PDF Iniciado", description: `RIF_${selectedFile.name}.pdf` });
+  };
+
 
   return (
     <div className="flex flex-col gap-6">
@@ -210,7 +301,7 @@ function FinancialAnalysisContent() {
             </div>
           )}
         </CardContent>
-        <CardFooter className="gap-2">
+        <CardFooter className="flex-wrap gap-2">
           <Button onClick={handleAnalyze} disabled={!selectedFile || isLoading || !isCaseSelected}>
             {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
             {isLoading ? "Analisando Dados..." : "Analisar Dados Financeiros"}
@@ -218,6 +309,11 @@ function FinancialAnalysisContent() {
            <Button variant="outline" onClick={handleReset} disabled={isLoading}>
              <RotateCcw className="mr-2 h-4 w-4" /> Reiniciar
           </Button>
+            {analysisResult && (
+            <Button variant="outline" onClick={handleDownloadPdf} disabled={isLoading}>
+                <FileDown className="mr-2 h-4 w-4" /> Baixar PDF
+            </Button>
+          )}
         </CardFooter>
       </Card>
 

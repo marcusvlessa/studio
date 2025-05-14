@@ -1,3 +1,4 @@
+
 "use client";
 
 import Link from "next/link";
@@ -64,23 +65,13 @@ export function AppLayout({ children }: AppLayoutProps) {
         </SidebarContent>
         <SidebarFooter className="p-2">
             <SidebarMenu>
-                <SidebarMenuItem>
-                    <SidebarMenuButton 
-                        asChild 
-                        tooltip={{ children: "Configurações", className: "bg-card text-card-foreground border-border" }}
-                    >
-                        <Link href="#">
-                            <Settings />
-                            <span>Configurações</span>
-                        </Link>
-                    </SidebarMenuButton>
-                </SidebarMenuItem>
+                {/* The Settings link is already in NAV_ITEMS, so removing it from here to avoid duplication */}
                 <SidebarMenuItem>
                      <SidebarMenuButton 
                         asChild 
                         tooltip={{ children: "Sair", className: "bg-card text-card-foreground border-border" }}
                     >
-                        <Link href="#">
+                        <Link href="#"> {/* Kept Sair (Logout) as an example, to be implemented later */}
                             <LogOut />
                             <span>Sair</span>
                         </Link>
@@ -102,3 +93,4 @@ export function AppLayout({ children }: AppLayoutProps) {
     </SidebarProvider>
   );
 }
+

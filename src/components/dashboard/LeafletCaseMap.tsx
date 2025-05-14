@@ -35,7 +35,8 @@ const mapContainerStyle: React.CSSProperties = {
 
 const defaultInitialCenter: LatLngExpression = [-15.7801, -47.9292]; // Brasília, Brazil
 
-const MapUpdater = ({ center, zoomLevel }: { center: LatLngExpression; zoomLevel: number }) => {
+// Component to update map view when center or zoom props change
+const MapViewUpdater = ({ center, zoom }: { center: LatLngExpression; zoom: number }) => {
   const map = useMap();
   useEffect(() => {
     let isValidCenter = false;
@@ -45,12 +46,13 @@ const MapUpdater = ({ center, zoomLevel }: { center: LatLngExpression; zoomLevel
       isValidCenter = true;
     }
 
-    if (map && isValidCenter && Number.isFinite(zoomLevel)) {
-      map.setView(center, zoomLevel);
+    if (isValidCenter && Number.isFinite(zoom)) {
+      map.setView(center, zoom);
     }
-  }, [center, zoomLevel, map]);
+  }, [center, zoom, map]);
   return null;
 };
+
 
 const LeafletCaseMap: React.FC<LeafletCaseMapProps> = ({
   markers,
@@ -59,10 +61,14 @@ const LeafletCaseMap: React.FC<LeafletCaseMapProps> = ({
 }) => {
   const [isClient, setIsClient] = useState(false);
   const mapInstanceRef = useRef<LeafletMap | null>(null);
-  // Using a stable key to prevent unnecessary re-mounts of MapContainer itself.
-  // MapUpdater will handle dynamic changes to center/zoom.
-  const mapKey = useMemo(() => `leaflet-map-${Math.random().toString(36).substring(7)}`, []);
 
+  // Generate a key that changes when `markers` (or its relevant properties) change.
+  // This forces React to re-mount MapContainer, allowing Leaflet to initialize cleanly.
+  const mapKey = useMemo(() => {
+    // A simple way to change the key if markers change.
+    // Could be more sophisticated by hashing marker IDs or positions if needed.
+    return `leaflet-map-${markers.map(m => m.id).join('-')}-${markers.length}`;
+  }, [markers]);
 
   useEffect(() => {
     setIsClient(true);
@@ -91,17 +97,18 @@ const LeafletCaseMap: React.FC<LeafletCaseMapProps> = ({
     return initialZoomProp;
   }, [markers, initialZoomProp]);
 
-  // Cleanup map instance on component unmount
+  // Effect for cleaning up the map instance.
+  // This runs when the component unmounts OR when mapKey changes (forcing unmount & remount of MapContainer).
   useEffect(() => {
+    const currentMap = mapInstanceRef.current;
     return () => {
-      if (mapInstanceRef.current) {
-        // console.log("LeafletCaseMap: Removing map instance on unmount for key:", mapKey);
-        mapInstanceRef.current.remove();
+      if (currentMap) {
+        // console.log("LeafletCaseMap: Removing map instance for key:", mapKey);
+        currentMap.remove();
         mapInstanceRef.current = null;
       }
     };
-  }, [mapKey]); // This dependency ensures cleanup happens if mapKey were to change, but mapKey is now stable.
-                // The primary purpose here is cleanup when LeafletCaseMap itself unmounts.
+  }, [mapKey]); // Depend on mapKey to ensure cleanup before re-mount
 
   if (!isClient) {
     return (
@@ -111,21 +118,17 @@ const LeafletCaseMap: React.FC<LeafletCaseMapProps> = ({
       </div>
     );
   }
-
+  
   return (
     <MapContainer
-      key={mapKey} // Key to help React differentiate MapContainer instances if needed, though now stable.
+      key={mapKey} 
       center={center}
       zoom={zoom}
       scrollWheelZoom={true}
       style={mapContainerStyle}
       className="rounded-lg shadow-md"
       whenCreated={(mapInstance) => {
-        // console.log("LeafletCaseMap: Map instance created for key:", mapKey, mapInstance);
-        if (mapInstanceRef.current && mapInstanceRef.current !== mapInstance) {
-            // console.warn("LeafletCaseMap: Potentially overwriting an existing map instance ref. This might indicate a problem if not intended.");
-            // mapInstanceRef.current.remove(); // Clean up old instance if it wasn't cleaned up properly
-        }
+        // console.log("LeafletCaseMap: Map instance created/re-created for mapKey:", mapKey);
         mapInstanceRef.current = mapInstance;
       }}
     >
@@ -142,9 +145,12 @@ const LeafletCaseMap: React.FC<LeafletCaseMapProps> = ({
           </Marker>
         )
       ))}
-      <MapUpdater center={center} zoomLevel={zoom} />
+      {/* MapViewUpdater ensures that if center/zoom props change *without* the MapContainer remounting, the view is updated. */}
+      {/* This is useful if mapKey changes are less frequent than center/zoom updates. */}
+      <MapViewUpdater center={center} zoom={zoom} />
     </MapContainer>
   );
 };
 
 export default LeafletCaseMap;
+

@@ -153,11 +153,14 @@ export default function DashboardPage() {
   , [aggregatedCrimeData]);
 
   const mapMarkers: MapMarkerData[] = useMemo(() => {
+    if (!cases || cases.length === 0) return [];
     return cases.map((caseItem, index) => {
-      // Placeholder: Generate somewhat random coordinates within Brazil for demonstration
-      // In a real app, you'd get these from case data or analysis results
-      const lat = -15.7801 + (Math.random() - 0.5) * 20; // Around Brasília +/- 10 degrees
-      const lon = -47.9292 + (Math.random() - 0.5) * 20; // Around Brasília +/- 10 degrees
+      // Generate pseudo-random but deterministic coordinates based on index or ID
+      // This avoids Math.random() on each render, making markers stable
+      const latOffset = (index % 10) * 0.5 - 2.5 + (parseInt(caseItem.id.substring(0, 2), 16) / 255 - 0.5) * 0.2; // Slight variation based on ID
+      const lonOffset = ((index * 3) % 10) * 0.5 - 2.5 + (parseInt(caseItem.id.substring(2, 4), 16) / 255 - 0.5) * 0.2; // Slight variation
+      const lat = -15.7801 + latOffset * 2; // Increased spread
+      const lon = -47.9292 + lonOffset * 2; // Increased spread
       return {
         id: caseItem.id,
         position: [lat, lon] as [number, number],
@@ -335,7 +338,6 @@ export default function DashboardPage() {
             <CardDescription>Distribuição geográfica dos casos (localizações simuladas).</CardDescription>
           </CardHeader>
           <CardContent className="h-[350px] p-0">
-             {/* Conditional rendering for CaseMap based on cases.length */}
             {cases.length > 0 ? (
                 <CaseMap markers={mapMarkers} />
              ) : (
@@ -352,3 +354,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+

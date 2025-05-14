@@ -76,9 +76,3 @@ export interface AggregatedCrimeTag {
 export interface ApiKeyStore {
   googleApiKey?: string;
 }
-
-export interface MapMarkerData {
-  position: { lat: number; lng: number };
-  popupContent: string;
-  id: string;
-}

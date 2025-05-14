@@ -1,21 +1,14 @@
 // src/app/page.tsx
 "use client";
 import { useEffect, useState, useMemo } from "react";
-import { TrendingUp, FileSearch, FolderKanban, AlertTriangle, MapPin, ShieldCheck, Loader2 } from "lucide-react";
-import dynamic from "next/dynamic";
+import { TrendingUp, FileSearch, FolderKanban, AlertTriangle, ShieldCheck, Loader2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
 import { BarChart, LineChart, Bar, CartesianGrid, XAxis, YAxis, Line, Cell, ResponsiveContainer } from "recharts";
 import { useToast } from "@/hooks/use-toast";
-import type { Case, CaseAnalysis, AggregatedCrimeTag, MapMarkerData } from "@/types/case";
+import type { Case, CaseAnalysis, AggregatedCrimeTag } from "@/types/case";
 import type { ClassifyTextForCrimesOutput } from "@/ai/flows/classify-text-for-crimes-flow";
-import type { LatLngExpression } from 'leaflet'; // Import LatLngExpression
 
-// Dynamically import the LeafletCaseMap component
-const LeafletCaseMap = dynamic(() => import("@/components/dashboard/LeafletCaseMap"), {
-  ssr: false,
-  loading: () => <div className="flex items-center justify-center h-full bg-muted rounded-lg"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Carregando mapa...</p></div>,
-});
 
 type ChartConfig = Record<string, { label: string; color: string }>;
 
@@ -34,8 +27,6 @@ const crimeColors: string[] = [
   "hsl(var(--chart-5))",
   "hsl(var(--accent))",
 ];
-
-const defaultCenterMap: LatLngExpression = [-15.7801, -47.9292]; // Brasília
 
 
 export default function DashboardPage() {
@@ -151,52 +142,6 @@ export default function DashboardPage() {
       return acc;
     }, {} as ChartConfig)
   , [aggregatedCrimeData]);
-
-  const mapMarkers: MapMarkerData[] = useMemo(() => {
-    if (!cases || cases.length === 0) return [];
-    
-    const parseHexSafe = (str: string): number => {
-      const parsed = parseInt(str, 16);
-      return isNaN(parsed) ? Math.floor(Math.random() * 256) : parsed;
-    };
-
-    return cases.map((caseItem, index) => {
-      // Generate pseudo-random offsets based on case ID and index to spread markers
-      // This is a deterministic way to get varied locations for demo purposes.
-      const idPart1Str = caseItem.id.length >= 2 ? caseItem.id.substring(0, 2) : "00";
-      const idPart2Str = caseItem.id.length >= 4 ? caseItem.id.substring(2, 4) : "00";
-
-      const idNum1 = parseHexSafe(idPart1Str);
-      const idNum2 = parseHexSafe(idPart2Str);
-
-      const baseLat = -15.7801; // Brasília, Brazil
-      const baseLng = -47.9292;
-
-      // Create varied offsets. Multipliers ensure wider spread.
-      // Modulo operations help to distribute points more evenly.
-      const latOffset = ((index * 137 + idNum1) % 1000 / 1000 - 0.5) * 8; // Spread over approx +/- 4 degrees
-      const lngOffset = ((index * 251 + idNum2) % 1000 / 1000 - 0.5) * 8; // Spread over approx +/- 4 degrees
-      
-      let lat = baseLat + latOffset;
-      let lng = baseLng + lngOffset;
-
-      // Clamp to valid lat/lng ranges
-      lat = Math.max(-85, Math.min(85, lat)); // Leaflet prefers slightly less than +/-90
-      lng = Math.max(-179, Math.min(179, lng)); // Leaflet prefers slightly less than +/-180
-      
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-        // Fallback if something went wrong with calculation
-        lat = baseLat + (Math.random() - 0.5) * 0.1;
-        lng = baseLng + (Math.random() - 0.5) * 0.1;
-      }
-
-      return {
-        id: caseItem.id,
-        position: { lat, lng },
-        popupContent: `<b>Caso:</b> ${caseItem.name}<br/><b>Status:</b> ${caseItem.status}<br/><b>Descrição:</b> ${caseItem.description.substring(0,50)}...`,
-      };
-    });
-  }, [cases]);
 
 
   if (isLoading) {
@@ -325,7 +270,7 @@ export default function DashboardPage() {
         </Card>
       </div>
       
-      <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2">
+      <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-1"> 
         <Card className="col-span-1">
             <CardHeader>
                 <CardTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-primary"/> Tipos de Crimes Identificados (Top 10)</CardTitle>
@@ -361,25 +306,10 @@ export default function DashboardPage() {
               )}
             </CardContent>
         </Card>
-        <Card className="col-span-1">
-          <CardHeader>
-            <CardTitle>Pontos Críticos Geoespaciais (Casos)</CardTitle>
-            <CardDescription>Distribuição geográfica dos casos (localizações simuladas).</CardDescription>
-          </CardHeader>
-          <CardContent className="h-[350px] p-0">
-             {cases.length > 0 ? (
-                <LeafletCaseMap markers={mapMarkers} center={defaultCenterMap} zoom={3} /> 
-             ) : (
-                <div className="flex flex-col items-center justify-center h-full text-center bg-muted rounded-lg">
-                    <MapPin className="h-12 w-12 text-muted-foreground mb-2" />
-                    <p className="text-muted-foreground">Nenhum caso para exibir no mapa.</p>
-                    <p className="text-xs text-muted-foreground">Cadastre casos para visualizá-los aqui.</p>
-                </div>
-            )}
-          </CardContent>
-        </Card>
+        {/* Geoespacial Map Card Removed */}
       </div>
        <p className="text-xs text-muted-foreground text-center mt-4">Nota: Os dados são simulados e armazenados em memória. Funcionalidades de IA dependem da chave API configurada.</p>
     </div>
   );
 }
+

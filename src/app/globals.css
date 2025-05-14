@@ -1,5 +1,3 @@
-/* Import Leaflet CSS */
-@import "leaflet/dist/leaflet.css";
 
 @tailwind base;
 @tailwind components;
@@ -111,11 +109,4 @@
   body {
     @apply font-sans bg-background text-foreground; /* Use Tailwind's font-sans utility */
   }
-}
-
-/* Leaflet map container default height */
-.leaflet-container {
-  height: 100%; /* Make it take full height of its parent */
-  width: 100%;
-  border-radius: var(--radius); /* Apply shadcn radius */
 }

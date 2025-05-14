@@ -33,8 +33,8 @@ export function AppLayout({ children }: AppLayoutProps) {
     <SidebarProvider defaultOpen>
       <Sidebar collapsible="icon" variant="sidebar" side="left">
         <SidebarHeader className="p-4">
-          <Link href="/" className="flex items-center gap-2.5"> {/* Increased gap slightly */}
-            <BrainCircuit className="h-9 w-9 text-primary" /> {/* Changed icon here */}
+          <Link href="/" className="flex items-center gap-2.5 group"> {/* Increased gap slightly and added group */}
+            <BrainCircuit className="h-9 w-9 text-primary transition-all duration-300 ease-in-out group-hover:scale-110 group-hover:drop-shadow-[0_0_8px_hsl(var(--accent))]" /> {/* Changed icon here and added hover effects */}
             <h1 className="text-2xl font-semibold text-primary group-data-[collapsible=icon]:hidden"> {/* Made text larger */}
               {APP_NAME}
             </h1>
@@ -99,4 +99,5 @@ export function AppLayout({ children }: AppLayoutProps) {
     </SidebarProvider>
   );
 }
+
 

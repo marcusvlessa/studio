@@ -13,7 +13,7 @@ import type { MapMarkerData } from "@/components/dashboard/CaseMap";
 
 const CaseMap = dynamic(() => import("@/components/dashboard/CaseMap"), {
   ssr: false,
-  loading: () => <div className="flex items-center justify-center h-full"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Carregando mapa...</p></div>,
+  loading: () => <div className="flex items-center justify-center h-full bg-muted rounded-lg"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Carregando mapa...</p></div>,
 });
 
 
@@ -335,12 +335,13 @@ export default function DashboardPage() {
             <CardDescription>Distribuição geográfica dos casos (localizações simuladas).</CardDescription>
           </CardHeader>
           <CardContent className="h-[350px] p-0">
-            {typeof window !== 'undefined' && cases.length > 0 ? (
+             {/* Conditional rendering for CaseMap based on cases.length */}
+            {cases.length > 0 ? (
                 <CaseMap markers={mapMarkers} />
              ) : (
-                <div className="flex flex-col items-center justify-center h-full text-center">
+                <div className="flex flex-col items-center justify-center h-full text-center bg-muted rounded-lg">
                     <MapPin className="h-12 w-12 text-muted-foreground mb-2" />
-                    <p className="text-muted-foreground">Nenhum dado de caso para exibir no mapa.</p>
+                    <p className="text-muted-foreground">Nenhum caso para exibir no mapa.</p>
                     <p className="text-xs text-muted-foreground">Cadastre casos para visualizá-los aqui.</p>
                 </div>
             )}
@@ -351,4 +352,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-

@@ -1,12 +1,14 @@
 // src/components/dashboard/CaseMap.tsx
 "use client";
 
+import { useEffect, useState } from 'react';
 import type { LatLngExpression } from 'leaflet';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import L from 'leaflet'; // Import L for custom icons if needed
+import L from 'leaflet';
+import { Loader2, MapPin } from 'lucide-react'; // Added MapPin for placeholder
 
-// Fix for default Leaflet icon issue with Webpack/Next.js
+// Fix for default Leaflet icon issue
 // @ts-ignore
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -14,7 +16,6 @@ L.Icon.Default.mergeOptions({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
-
 
 export interface MapMarkerData {
   position: LatLngExpression;
@@ -28,18 +29,47 @@ interface CaseMapProps {
   zoom?: number;
 }
 
+const MAP_CONTAINER_ID = "cyberric-case-map-unique"; // Ensure a unique ID
+
 const CaseMap: React.FC<CaseMapProps> = ({
   markers,
   center = [-15.7801, -47.9292], // Default center (Brasília)
   zoom = 4, // Default zoom
 }) => {
-  if (typeof window === 'undefined') {
-    // Don't render on the server
-    return null;
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  if (!isClient) {
+    // Fallback for SSR or before client-side hydration completes for Leaflet-dependent parts
+    return (
+      <div style={{ height: '100%', width: '100%' }} className="rounded-lg shadow-md bg-muted flex items-center justify-center text-muted-foreground">
+        <Loader2 className="h-6 w-6 animate-spin mr-2" />
+        Carregando Mapa...
+      </div>
+    );
   }
 
+  // Parent component (DashboardPage) should ideally handle the cases.length === 0 logic
+  // by not rendering CaseMap or passing empty markers.
+  // This check is an additional safeguard within CaseMap itself.
+  if (markers.length === 0 && isClient) { // Ensure this placeholder is also client-side
+     return (
+      <div style={{ height: '100%', width: '100%' }} className="rounded-lg shadow-md bg-muted flex flex-col items-center justify-center text-muted-foreground p-4 text-center">
+        <MapPin className="h-10 w-10 mb-2" />
+        <p className="text-sm">Nenhum marcador para exibir.</p>
+      </div>
+    );
+  }
+  
   return (
-    <MapContainer center={center} zoom={zoom} scrollWheelZoom={true} style={{ height: '100%', width: '100%' }} className="rounded-lg shadow-md">
+    // Ensure MapContainer itself is only rendered client-side after checks.
+    // A key can help if React needs to re-create the MapContainer instance rather than update it,
+    // which might be necessary if Leaflet's internal cleanup on unmount is problematic.
+    // Using a simple stable key here, or could derive from a prop that forces re-init if needed.
+    <MapContainer key={MAP_CONTAINER_ID + markers.length} id={MAP_CONTAINER_ID} center={center} zoom={zoom} scrollWheelZoom={true} style={{ height: '100%', width: '100%' }} className="rounded-lg shadow-md">
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"

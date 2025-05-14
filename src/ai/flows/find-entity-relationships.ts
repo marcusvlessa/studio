@@ -1,4 +1,3 @@
-
 'use server';
 
 /**
@@ -85,7 +84,7 @@ const prompt = ai.definePrompt({
   prompt: `Você é um especialista em análise de inteligência e construção de grafos de vínculos, modelado a partir das capacidades do IBM i2 Analyst's Notebook. Sua tarefa é analisar uma lista de 'Entidades Brutas' fornecidas, identificar entidades distintas, classificá-las e, o mais importante, inferir e descrever os relacionamentos entre elas. Se necessário, crie entidades implícitas (como Eventos ou Transações) para conectar outras entidades de forma significativa.
 
 **Contexto da Análise:** {{{analysisContext}}}
-{{#if fileOrigin}}Arquivo de Origem dos Dados: {{{fileOrigin}}}{{/if}}
+{{#if fileOrigin}}Arquivo de Origem dos Dados: {{{fileOrigin}}}{{#endif}}
 
 **Entidades Brutas Fornecidas para Análise (podem ser texto extraído de um arquivo, incluindo linhas de tabela, ou metadados de arquivo como nome e tipo):**
 {{#if entities.length}}
@@ -102,7 +101,7 @@ const prompt = ai.definePrompt({
     *   Processe a lista de 'Entidades Brutas'. Identifique entidades únicas e significativas.
     *   **Tratamento de Mensagens de Sistema:** Se uma das 'Entidades Brutas' for claramente uma mensagem do sistema indicando impossibilidade de leitura de conteúdo de arquivo (ex: "Impossibilidade de análise direta...", "AVISO DO SISTEMA: O arquivo..."), NÃO crie uma entidade para essa mensagem no grafo. Em vez disso, use essa informação para detalhar o 'analysisSummary', explicando que a análise de vínculos para o arquivo {{{fileOrigin}}} (se aplicável) foi limitada a metadados (nome, tipo de arquivo) pois seu conteúdo não pôde ser processado. As outras 'Entidades Brutas' (como nome do arquivo, tipo MIME, ou texto extraído de outras fontes) devem ser processadas normalmente para identificação de entidades e relações.
     *   Para CADA entidade identificada (que NÃO seja uma mensagem de sistema):
-        *   **ID da Entidade (Campo 'id'):** Atribua um ID único e SIMPLES para esta entidade (ex: "ent_1", "pessoa_joao_silva", "org_xpto_ltda", "tel_5511999998888"). Use apenas letras minúsculas, números e underscores ('_'). Este ID é CRUCIAL e DEVE ser usado EXATAMENTE IGUAL nos campos 'source' e 'target' dos relacionamentos. NÃO use o label da entidade diretamente como ID nos relacionamentos; use este campo 'id' que você está gerando aqui.
+        *   **ID da Entidade (Campo 'id'):** Atribua um ID único e SIMPLES para esta entidade (ex: "ent_1", "pessoa_joao_silva", "org_xpto_ltda", "tel_5511999998888"). **Este ID DEVE SER uma string não vazia, composta apenas por letras minúsculas, números e underscores ('_').** Este ID é CRUCIAL e DEVE ser usado EXATAMENTE IGUAL nos campos 'source' e 'target' dos relacionamentos. NÃO use o label da entidade diretamente como ID nos relacionamentos; use este campo 'id' que você está gerando aqui.
         *   **Label da Entidade (Campo 'label'):** O valor textual da entidade como ela aparece nos dados ou como foi inferida (ex: João Silva, Empresa XYZ Ltda, (51) 99999-8888, 192.168.1.100).
         *   **Tipo da Entidade (Campo 'type'):** Classifique com um 'type' o mais específico possível, usando os tipos PRIMÁRIOS listados abaixo e refinando quando possível. Priorize a especificidade conforme o 'analysisContext'.
             *   **Pessoa:** (Ex: João Silva). Propriedades: "{\"CPF\": \"XXX.XXX.XXX-XX\", \"RG\": \"XX.XXX.XXX-X\", \"Nascimento_texto\": \"DD/MM/AAAA\", \"Apelido\": \"Zé\"}".
@@ -124,31 +123,31 @@ const prompt = ai.definePrompt({
             *   **Nome de Arquivo:** (Ex: {{{fileOrigin}}}). Usar se o próprio arquivo é uma entidade central na análise de metadados.
             *   **Tipo de Arquivo:** (Ex: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet). Se uma das entidades brutas for um tipo MIME, identifique-a como tal.
             *   **Outros:** Para entidades que não se encaixam acima, seja específico (ex: "Produto Químico", "Droga", "Apelido").
-    *   **Dados Tabulares:** Se uma 'Entidade Bruta' parecer ser uma linha de dados tabulares (ex: "João Silva,(XX)XXXXX-XXXX,XXX.XXX.XXX-XX"), decomponha-a em múltiplas entidades (Pessoa "João Silva", Telefone "(XX)XXXXX-XXXX", Documento "CPF XXX.XXX.XXX-XX") CADA UMA COM SEU PRÓPRIO 'id' ÚNICO, e INFERA relacionamentos entre elas (ex: João Silva "possui" Telefone, João Silva "possui" CPF).
+    *   **Dados Tabulares:** Se uma 'Entidade Bruta' parecer ser uma linha de dados tabulares (ex: "João Silva,(XX)XXXXX-XXXX,XXX.XXX.XXX-XX"), decomponha-a em múltiplas entidades (Pessoa "João Silva", Telefone "(XX)XXXXX-XXXX", Documento "CPF XXX.XXX.XXX-XX") CADA UMA COM SEU PRÓPRIO 'id' ÚNICO (seguindo as regras de ID simples), e INFERA relacionamentos entre elas (ex: João Silva "possui" Telefone, João Silva "possui" CPF).
     *   **Propriedades (Campo 'properties'):** Para CADA entidade e relacionamento, SEMPRE forneça uma STRING JSON VÁLIDA (ex: "{\"CPF\": \"123.456.789-00\", \"Status\": \"Ativo\"}"). Os valores dentro do JSON devem ser strings. Se NÃO HOUVER propriedades, envie uma string JSON vazia como "{}" ou omita o campo (o schema de output tem default "{}" para isso).
 
 2.  **Inferência e Descrição de Relacionamentos (Campo: relationships):**
-    *   Identifique relacionamentos DIRETOS e INDIRETOS (através de entidades intermediárias como Eventos ou Transações) entre as identifiedEntities.
+    *   Identifique relacionamentos DIRETOS e INDIRETOS (através de entidades intermediárias como Eventos ou Transações) entre as `identifiedEntities`.
     *   Para CADA relacionamento:
-        *   'source' e 'target': **IMPERATIVO** Use os IDs EXATOS das entidades de origem/destino definidos na lista identifiedEntities (o campo 'id' que você gerou para elas). NÃO use labels aqui.
+        *   'source' e 'target': **IMPERATIVO E ABSOLUTAMENTE ESSENCIAL:** Use os IDs EXATOS das entidades de origem/destino conforme definidos por VOCÊ no campo 'id' da lista \`identifiedEntities\`. O valor de 'source' e 'target' aqui DEVE ser IDÊNTICO ao valor do campo 'id' da entidade correspondente. Não use labels, não use variações, use o ID exato.
         *   'label': Descrição textual concisa do relacionamento (Ex: "Comunicou com (Telefone)", "Transferiu R$X para (PIX)", "Reside em (Endereço)", "Proprietário de (Veículo)", "Utilizou ERB (Telefone)", "É do tipo (Metadado)", "Membro de (Organização)"). Seja específico, indicando o tipo de relação se ajudar.
         *   'type': (Opcional) Categorize (Ex: Comunicação, Financeiro, Familiar, Profissional, Propriedade, Localização, Técnico, Participação em Evento, Social, Metadado).
         *   'direction': (Opcional) "direcional", "bidirecional", ou "nao_direcional". Se "direcional", indique o fluxo (ex: de source para target).
         *   'strength': (Opcional) Confiança (0.0 a 1.0).
         *   'properties': (Opcional) STRING JSON VÁLIDA com detalhes (Ex: "{\"data_hora_inicio_texto\": \"DD/MM/AAAA HH:MM\", \"duracao_segundos_texto\": \"120\", \"valor_transferido_texto\": \"R$ 500,00\"}"). Se NÃO HOUVER, omita ou envie "{}".
 
-3.  **Criação de Entidades Implícitas:** Se, por exemplo, Pessoa A e Pessoa B são mencionadas em conexão com um "assalto dia X", crie uma entidade 'Evento/Incidente' "Assalto Dia X" (com seu próprio ID único, ex: "evento_assalto_dia_x"), e relacione Pessoa A (usando seu ID) e Pessoa B (usando seu ID) a este evento (ex: Pessoa A "participou de" evento_assalto_dia_x).
+3.  **Criação de Entidades Implícitas:** Se, por exemplo, Pessoa A e Pessoa B são mencionadas em conexão com um "assalto dia X", crie uma entidade 'Evento/Incidente' "Assalto Dia X" (com seu próprio ID único, ex: "evento_assalto_dia_x", seguindo as regras de ID simples), e relacione Pessoa A (usando seu ID) e Pessoa B (usando seu ID) a este evento (ex: Pessoa A "participou de" evento_assalto_dia_x). Certifique-se de que esta entidade implícita também esteja listada em `identifiedEntities`.
 
 4.  **Resumo da Análise (Campo: analysisSummary):**
     *   Forneça um resumo textual conciso (2-5 parágrafos) da análise de vínculos.
     *   **Destaque:** Entidades centrais (com muitas conexões), principais grupos/clusters, tipos de relacionamentos mais comuns, e quaisquer padrões ou anomalias observadas.
-    *   **Importante:** Se a análise foi desafiadora devido à natureza dos dados (ex: conteúdo de arquivo não processável, dados esparsos, texto muito genérico), mencione explicitamente essas limitações e como a análise se baseou em metadados ou inferências limitadas. Por exemplo: "A análise do arquivo '{{{fileOrigin}}}' foi limitada, pois seu conteúdo não pôde ser extraído diretamente. Os vínculos identificados baseiam-se no nome e tipo do arquivo, e em outras entidades fornecidas."
+    *   **Importante:** Se a análise foi desafiadora devido à natureza dos dados (ex: conteúdo de arquivo não processável, dados esparsos, texto muito genérico), mencione explicitamente essas limitações e como a análise se baseou em metadados ou inferências limitadas. Por exemplo: "A análise do arquivo '{{{fileOrigin}}}' foi limitada, pois seu conteúdo não pôde ser extraído diretamente. Os vínculos identificados baseiam-se no nome e tipo do arquivo, e em outras entidades fornecidas." Se você identificou relacionamentos, mas teve dificuldade em mapeá-los devido a inconsistências nos IDs, mencione isso brevemente.
     *   O tom deve ser objetivo, investigativo e em LÍNGUA PORTUGUESA.
 
 Se a lista de 'Entidades Brutas' for pequena ou muito genérica, faça o melhor possível para extrair significado e indique no 'analysisSummary' as limitações.
 Foco na QUALIDADE e ESPECIFICIDADE dos tipos de entidade e na CLAREZA das descrições dos relacionamentos.
-**REITERAÇÃO CRUCIAL:** Certifique-se de que TODOS os IDs usados nos campos 'source' e 'target' dos relacionamentos CORRESPONDAM EXATAMENTE a IDs definidos por você na lista 'identifiedEntities'. A consistência dos IDs é fundamental.
-`,
+**REITERAÇÃO CRUCIAL E FINAL:** A consistência dos IDs é FUNDAMENTAL. O ID que você define para uma entidade no campo 'id' da lista \`identifiedEntities\` DEVE SER EXATAMENTE O MESMO ID usado nos campos 'source' ou 'target' de QUALQUER relacionamento que envolva essa entidade. Qualquer pequena variação (maiúscula/minúscula, espaço extra, caractere diferente) fará com que o vínculo não seja visualizado corretamente.
+`
 });
 
 let entityFlowCounter = 0; // Counter for unique fallback entity IDs
@@ -177,7 +176,7 @@ const findEntityRelationshipsFlow = ai.defineFlow(
       entities: processedEntitiesInput
     };
 
-    const {output: rawOutput} = await prompt(promptInput); // rawOutput contains properties as JSON strings
+    const {output: rawOutput} = await prompt(promptInput); 
     if (!rawOutput) {
       console.error("Análise de vínculos: A IA não retornou um resultado válido.");
       return {
@@ -195,9 +194,18 @@ const findEntityRelationshipsFlow = ai.defineFlow(
     const parsedIdentifiedEntities: FindEntityRelationshipsOutput['identifiedEntities'] = rawOutput.identifiedEntities
       .filter(entity => !(entity.label.startsWith("AVISO DO SISTEMA:") || entity.label.startsWith("Impossibilidade de análise"))) 
       .map((entity, idx) => {
-        let baseReactFlowId = entity.id ? entity.id.replace(/[^a-zA-Z0-9_]/g, '_').substring(0, 50).trim() : `entidade_gerada_${entityFlowCounter++}`;
-        if (baseReactFlowId.length === 0 || /^\W+$/.test(baseReactFlowId)) { 
-            baseReactFlowId = `entidade_unica_${entityFlowCounter++}`;
+        // Ensure entity.id is a non-empty string, otherwise generate a fallback for aiOriginalId right away.
+        const aiProvidedId = (typeof entity.id === 'string' && entity.id.trim() !== "") ? entity.id.trim() : null;
+        const aiOriginalId = aiProvidedId || `entidade_sem_id_original_ia_${entityFlowCounter++}_${entity.label.substring(0,10).replace(/[^a-zA-Z0-9_]/g, '')}`;
+
+        if (!aiProvidedId) {
+            console.warn(`[findEntityRelationshipsFlow] Entidade da IA (Label: ${entity.label}, Index: ${idx}) veio SEM ID ou com ID VAZIO! Usando ID de fallback para mapeamento: ${aiOriginalId}. O prompt da IA DEVE fornecer um 'id' válido para cada 'identifiedEntities'.`);
+        }
+        
+        // Sanitize the aiOriginalId for ReactFlow usage
+        let baseReactFlowId = aiOriginalId.replace(/[^a-zA-Z0-9_]/g, '_').substring(0, 50);
+        if (baseReactFlowId.length === 0 || /^\\W+$/.test(baseReactFlowId) || baseReactFlowId.startsWith('_')) { 
+            baseReactFlowId = `entidade_gerada_${entityFlowCounter++}`;
         }
 
         let finalReactFlowId = baseReactFlowId;
@@ -207,12 +215,7 @@ const findEntityRelationshipsFlow = ai.defineFlow(
         }
         reactFlowIdUsageMap.set(baseReactFlowId, count + 1);
       
-        const aiOriginalId = entity.id || `fallback_ai_id_${idx}_${entity.label.substring(0,10)}`;
-        if (!entity.id) {
-            console.warn(`[findEntityRelationshipsFlow] Entidade da IA (Label: ${entity.label}, Index: ${idx}) veio SEM ID! Usando ID de fallback para mapeamento: ${aiOriginalId}. O prompt da IA DEVE fornecer um 'id' para cada 'identifiedEntities'.`);
-        }
-        aiEntityIdToReactFlowIdMap.set(aiOriginalId, finalReactFlowId);
-
+        aiEntityIdToReactFlowIdMap.set(aiOriginalId, finalReactFlowId); // Map original (or its fallback) to final clean ID
 
         let parsedProperties: Record<string, string> = {};
         if (typeof entity.properties === 'string' && entity.properties.trim() !== "" && entity.properties.trim() !== "{}") {
@@ -225,10 +228,10 @@ const findEntityRelationshipsFlow = ai.defineFlow(
                 }
               }
             } else {
-               console.warn(`[findEntityRelationshipsFlow] Propriedades da entidade '${entity.label}' (ID IA: ${aiOriginalId}) não é um objeto JSON válido: ${entity.properties}`);
+               console.warn(`[findEntityRelationshipsFlow] Propriedades da entidade '${entity.label}' (ID IA Original: ${aiOriginalId}) não é um objeto JSON válido: ${entity.properties}`);
             }
           } catch (e) {
-            console.warn(`[findEntityRelationshipsFlow] Falha ao parsear JSON das propriedades para entidade '${entity.label}' (ID IA: ${aiOriginalId}): ${entity.properties}`, e);
+            console.warn(`[findEntityRelationshipsFlow] Falha ao parsear JSON das propriedades para entidade '${entity.label}' (ID IA Original: ${aiOriginalId}): ${entity.properties}`, e);
             if (entity.properties.trim() !== "{}") {
                 parsedProperties["propriedades_brutas"] = entity.properties;
             }
@@ -237,13 +240,22 @@ const findEntityRelationshipsFlow = ai.defineFlow(
         return { ...entity, id: finalReactFlowId, properties: parsedProperties }; 
     });
     
-    console.log("[findEntityRelationshipsFlow] Entidades parseadas para ReactFlow (mostrando id, label, id_original_IA):", JSON.stringify(parsedIdentifiedEntities.map(e => ({id: e.id, label: e.label, id_original_IA_mapeado_de: Array.from(aiEntityIdToReactFlowIdMap.entries()).find(entry => entry[1] === e.id)?.[0] || 'N/A'})), null, 2));
-    console.log("[findEntityRelationshipsFlow] Mapa de IDs (ID IA -> ID ReactFlow):", JSON.stringify(Array.from(aiEntityIdToReactFlowIdMap.entries()), null, 2));
+    console.log("[findEntityRelationshipsFlow] Entidades parseadas para ReactFlow (mostrando id, label, id_original_IA_mapeado_de):", JSON.stringify(parsedIdentifiedEntities.map(e => ({id: e.id, label: e.label, id_original_IA_mapeado_de: Array.from(aiEntityIdToReactFlowIdMap.entries()).find(entry => entry[1] === e.id)?.[0] || 'N/A'})), null, 2));
+    console.log("[findEntityRelationshipsFlow] Mapa de IDs (ID IA Original/Fallback -> ID ReactFlow):", JSON.stringify(Array.from(aiEntityIdToReactFlowIdMap.entries()), null, 2));
 
     const parsedRelationships: FindEntityRelationshipsOutput['relationships'] = rawOutput.relationships
     .map((rel, index) => {
-        const reactFlowSourceId = aiEntityIdToReactFlowIdMap.get(rel.source); 
-        const reactFlowTargetId = aiEntityIdToReactFlowIdMap.get(rel.target); 
+        if (typeof rel.source !== 'string' || rel.source.trim() === "") {
+            console.warn(`[findEntityRelationshipsFlow] Relacionamento (Label: ${rel.label}, Index: ${index}) da IA veio com 'source' inválido ou vazio. Relacionamento ignorado.`);
+            return null;
+        }
+        if (typeof rel.target !== 'string' || rel.target.trim() === "") {
+            console.warn(`[findEntityRelationshipsFlow] Relacionamento (Label: ${rel.label}, Index: ${index}) da IA veio com 'target' inválido ou vazio. Relacionamento ignorado.`);
+            return null;
+        }
+
+        const reactFlowSourceId = aiEntityIdToReactFlowIdMap.get(rel.source.trim()); 
+        const reactFlowTargetId = aiEntityIdToReactFlowIdMap.get(rel.target.trim()); 
         
         if (!reactFlowSourceId) {
             console.warn(`[findEntityRelationshipsFlow] ID de origem do relacionamento IA ('${rel.source}') não encontrado no mapa de IDs para o relacionamento: '${rel.label}'. Chaves do mapa: [${Array.from(aiEntityIdToReactFlowIdMap.keys()).join(', ')}]. Relacionamento ignorado.`);
@@ -276,7 +288,6 @@ const findEntityRelationshipsFlow = ai.defineFlow(
         }
         
         return {
-            // Gerar ID único para a aresta no ReactFlow
             id: `edge-${index}-${reactFlowSourceId}-${reactFlowTargetId}`, 
             source: reactFlowSourceId,
             target: reactFlowTargetId,
@@ -301,13 +312,13 @@ const findEntityRelationshipsFlow = ai.defineFlow(
         return sourceNodeExists && targetNodeExists;
     });
 
-    console.log("[findEntityRelationshipsFlow] Relacionamentos parseados para ReactFlow (mostrando source, target, label):", JSON.stringify(parsedRelationships.map(r => ({source: r.source, target: r.target, label: r.label})), null, 2));
+    console.log("[findEntityRelationshipsFlow] Relacionamentos parseados para ReactFlow (mostrando source, target, label):", JSON.stringify(parsedRelationships.map(r => ({id: r.id, source: r.source, target: r.target, label: r.label})), null, 2));
 
     const finalSummary = analysisSummaryPrefix + (rawOutput.analysisSummary || "Análise de vínculos concluída. Nenhum resumo adicional fornecido pela IA.");
     console.log("[findEntityRelationshipsFlow] Resumo final:", finalSummary);
     
     if (parsedIdentifiedEntities.length > 0 && parsedRelationships.length === 0 && rawOutput.relationships && rawOutput.relationships.length > 0) {
-        console.warn("[findEntityRelationshipsFlow] A IA retornou relacionamentos, mas nenhum pôde ser mapeado ou validado. Verifique os logs de 'ID de origem/destino... não encontrado' ou 'Filtrando aresta APÓS MAPEAMENTO'. Isto geralmente indica que a IA não usou os IDs corretos nos campos 'source' e 'target' dos relacionamentos, ou não definiu as entidades correspondentes.");
+        console.warn("[findEntityRelationshipsFlow] A IA retornou relacionamentos, mas NENHUM pôde ser mapeado ou validado para o grafo. Verifique os logs de 'ID de origem/destino... não encontrado' ou 'Filtrando aresta APÓS MAPEAMENTO'. Isto geralmente indica que a IA não usou os IDs corretos nos campos 'source' e 'target' dos relacionamentos, ou não definiu as entidades correspondentes aos IDs usados.");
     } else if (parsedIdentifiedEntities.length > 0 && parsedRelationships.length > 0) {
         console.log(`[findEntityRelationshipsFlow] Análise de vínculos bem-sucedida: ${parsedIdentifiedEntities.length} entidades e ${parsedRelationships.length} relacionamentos para o grafo.`);
     }

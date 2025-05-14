@@ -1,6 +1,5 @@
-
 /* Import Leaflet CSS */
-/* @import "leaflet/dist/leaflet.css"; */ /* Removed Leaflet CSS */
+@import "leaflet/dist/leaflet.css";
 
 @tailwind base;
 @tailwind components;
@@ -114,8 +113,9 @@
   }
 }
 
-/* Leaflet map container default height - REMOVED */
-/* .leaflet-container {
-  height: 400px;
+/* Leaflet map container default height */
+.leaflet-container {
+  height: 100%; /* Make it take full height of its parent */
   width: 100%;
-} */
+  border-radius: var(--radius); /* Apply shadcn radius */
+}

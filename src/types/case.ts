@@ -1,5 +1,6 @@
 
 
+
 import type { AnalyzeDocumentOutput } from "@/ai/flows/analyze-document-flow";
 import type { TranscribeAudioOutput } from "@/ai/flows/transcribe-audio";
 import type { ConsolidateAudioAnalysesOutput } from "@/ai/flows/consolidate-audio-analyses-flow";
@@ -74,4 +75,10 @@ export interface AggregatedCrimeTag {
 // Define an API key storage type
 export interface ApiKeyStore {
   googleApiKey?: string;
+}
+
+export interface MapMarkerData {
+  position: { lat: number; lng: number };
+  popupContent: string;
+  id: string;
 }

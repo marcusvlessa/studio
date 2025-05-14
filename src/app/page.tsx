@@ -7,20 +7,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
 import { BarChart, LineChart, Bar, CartesianGrid, XAxis, YAxis, Line, Cell, ResponsiveContainer } from "recharts";
 import { useToast } from "@/hooks/use-toast";
-import type { Case, CaseAnalysis, AggregatedCrimeTag } from "@/types/case";
+import type { Case, CaseAnalysis, AggregatedCrimeTag, MapMarkerData } from "@/types/case";
 import type { ClassifyTextForCrimesOutput } from "@/ai/flows/classify-text-for-crimes-flow";
 
-// Dynamically import the GoogleCaseMap component
-const GoogleCaseMap = dynamic(() => import("@/components/dashboard/GoogleCaseMap"), {
+// Dynamically import the LeafletCaseMap component
+const LeafletCaseMap = dynamic(() => import("@/components/dashboard/LeafletCaseMap"), {
   ssr: false,
   loading: () => <div className="flex items-center justify-center h-full bg-muted rounded-lg"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Carregando mapa...</p></div>,
 });
-
-export interface GoogleMapMarkerData {
-  position: { lat: number; lng: number };
-  popupContent: string;
-  id: string;
-}
 
 type ChartConfig = Record<string, { label: string; color: string }>;
 
@@ -45,7 +39,6 @@ export default function DashboardPage() {
   const [cases, setCases] = useState<Case[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
-  const googleMapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
   useEffect(() => {
     const fetchCases = async () => {
@@ -156,43 +149,36 @@ export default function DashboardPage() {
     }, {} as ChartConfig)
   , [aggregatedCrimeData]);
 
-  const mapMarkers: GoogleMapMarkerData[] = useMemo(() => {
+  const mapMarkers: MapMarkerData[] = useMemo(() => {
     if (!cases || cases.length === 0) return [];
     
     const parseHexSafe = (str: string): number => {
       const parsed = parseInt(str, 16);
-      return isNaN(parsed) ? Math.floor(Math.random() * 256) : parsed; // Use random if not hex
+      return isNaN(parsed) ? Math.floor(Math.random() * 256) : parsed;
     };
 
     return cases.map((caseItem, index) => {
-      // Generate pseudo-random but deterministic coordinates
-      // Use a combination of index and parts of the ID for more variation
-      // Ensure substrings are valid or provide defaults
       const idPart1Str = caseItem.id.length >= 2 ? caseItem.id.substring(0, 2) : "00";
       const idPart2Str = caseItem.id.length >= 4 ? caseItem.id.substring(2, 4) : "00";
 
       const idNum1 = parseHexSafe(idPart1Str);
       const idNum2 = parseHexSafe(idPart2Str);
 
-      // Base coordinates (Brasilia, adjust as needed for desired region)
-      const baseLat = -15.7801;
+      const baseLat = -15.7801; // Brasília
       const baseLng = -47.9292;
 
-      // Create offsets - ensure these are not NaN
-      // Maximize spread within a reasonable area (e.g., +/- 5 degrees)
-      const latOffset = ((index * 13) % 100 / 100 - 0.5) * 10 + (idNum1 / 255 - 0.5) * 2; 
-      const lngOffset = ((index * 29) % 100 / 100 - 0.5) * 10 + (idNum2 / 255 - 0.5) * 2;
+      const latOffset = ((index * 13) % 100 / 100 - 0.5) * 5 + (idNum1 / 255 - 0.5) * 1; 
+      const lngOffset = ((index * 29) % 100 / 100 - 0.5) * 5 + (idNum2 / 255 - 0.5) * 1;
       
       let lat = baseLat + latOffset;
       let lng = baseLng + lngOffset;
 
-      // Clamp coordinates to valid ranges
       lat = Math.max(-90, Math.min(90, lat));
       lng = Math.max(-180, Math.min(180, lng));
       
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-        console.warn(`Generated invalid coordinates for case ${caseItem.id}: lat=${lat}, lng=${lng}. Defaulting to base.`);
-        lat = baseLat + (Math.random() - 0.5) * 0.1; // Small random offset from base
+        console.warn(`Coordenadas inválidas geradas para o caso ${caseItem.id}: lat=${lat}, lng=${lng}. Padrão para base.`);
+        lat = baseLat + (Math.random() - 0.5) * 0.1;
         lng = baseLng + (Math.random() - 0.5) * 0.1;
       }
 
@@ -373,13 +359,13 @@ export default function DashboardPage() {
             <CardDescription>Distribuição geográfica dos casos (localizações simuladas).</CardDescription>
           </CardHeader>
           <CardContent className="h-[350px] p-0">
-             {cases.length > 0 && googleMapsApiKey ? (
-                <GoogleCaseMap markers={mapMarkers} apiKey={googleMapsApiKey} />
+             {cases.length > 0 ? (
+                <LeafletCaseMap markers={mapMarkers} />
              ) : (
                 <div className="flex flex-col items-center justify-center h-full text-center bg-muted rounded-lg">
                     <MapPin className="h-12 w-12 text-muted-foreground mb-2" />
-                    <p className="text-muted-foreground">{!googleMapsApiKey ? "Chave API do Google Maps não configurada." : "Nenhum caso para exibir no mapa."}</p>
-                    <p className="text-xs text-muted-foreground">{!googleMapsApiKey ? "Adicione a chave NEXT_PUBLIC_GOOGLE_MAPS_API_KEY em .env.local para ver o mapa." : "Cadastre casos para visualizá-los aqui."}</p>
+                    <p className="text-muted-foreground">Nenhum caso para exibir no mapa.</p>
+                    <p className="text-xs text-muted-foreground">Cadastre casos para visualizá-los aqui.</p>
                 </div>
             )}
           </CardContent>
@@ -389,4 +375,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-

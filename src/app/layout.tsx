@@ -2,10 +2,10 @@
 import type {Metadata} from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
-import { AppLayout } from '@/components/layout/app-layout';
 import { Toaster } from '@/components/ui/toaster';
 import { SITE_TITLE, SITE_DESCRIPTION } from '@/config/site';
 import ClientOnlyLayout from '@/components/layout/client-only-layout';
+import { AuthProvider } from '@/contexts/AuthContext'; // Import AuthProvider
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -30,12 +30,13 @@ export default function RootLayout({
   return (
     <html lang="pt-BR" className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
       <body className="font-sans antialiased" suppressHydrationWarning>
-        <ClientOnlyLayout>
-          {children}
-        </ClientOnlyLayout>
+        <AuthProvider> {/* Wrap with AuthProvider */}
+          <ClientOnlyLayout>
+            {children}
+          </ClientOnlyLayout>
+        </AuthProvider>
         <Toaster />
       </body>
     </html>
   );
 }
-

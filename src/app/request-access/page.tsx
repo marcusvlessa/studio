@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
-import { Send, BrainCircuit, ArrowLeft, Loader2 } from "lucide-react";
+import { Send, BrainCircuit, ArrowLeft, Loader2, LogIn } from "lucide-react"; // Added LogIn
 import { APP_NAME } from "@/config/site";
 
 const requestAccessSchema = z.object({
@@ -60,7 +60,6 @@ Solicitação gerada automaticamente pelo sistema ${APP_NAME}.
     `;
     const mailtoLink = `mailto:marcusvlessa@gmail.com?subject=${encodeURIComponent(mailtoSubject)}&body=${encodeURIComponent(mailtoBody.trim())}`;
 
-    // Attempt to open mail client
     window.location.href = mailtoLink;
 
     toast({
@@ -68,7 +67,7 @@ Solicitação gerada automaticamente pelo sistema ${APP_NAME}.
       description: "Seu cliente de email deve abrir para enviar a solicitação. Por favor, envie o email gerado.",
       duration: 10000,
     });
-    // form.reset(); // Optionally reset the form
+    // form.reset(); 
   };
 
   return (
@@ -199,6 +198,11 @@ Solicitação gerada automaticamente pelo sistema ${APP_NAME}.
           </Form>
         </CardContent>
         <CardFooter className="flex flex-col items-center text-center">
+           <Link href="/login" className="mt-2">
+             <Button variant="outline" className="text-sm ">
+                <LogIn className="mr-2 h-4 w-4" /> Já tenho uma conta / Fazer Login
+             </Button>
+           </Link>
            <Link href="/" className="mt-4">
              <Button variant="link" className="text-sm text-muted-foreground">
                 <ArrowLeft className="mr-1 h-4 w-4" /> Voltar para a página inicial

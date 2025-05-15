@@ -1,3 +1,4 @@
+
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const url = require('url');
@@ -15,6 +16,11 @@ if (!store.get('pdfHeaderConfig')) {
   store.set('pdfHeaderConfig', { logoBase64: null, headerText: `Relatório de Inteligência Financeira - ${new Date().toLocaleDateString('pt-BR')}` });
 }
 
+// Initialize registeredUsersDB if it doesn't exist
+if (!store.has('registeredUsersDB')) {
+  store.set('registeredUsersDB', []);
+}
+
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -29,11 +35,9 @@ function createWindow() {
   });
 
   if (process.env.NODE_ENV === 'development') {
-    // In development, load from the Next.js dev server
-    win.loadURL('http://localhost:9002'); // Make sure this matches your Next.js dev port
+    win.loadURL('http://localhost:9002'); 
      win.webContents.openDevTools();
   } else {
-    // In production, load the static export
     const startUrl = url.format({
       pathname: path.join(__dirname, 'out/index.html'),
       protocol: 'file:',
@@ -42,14 +46,12 @@ function createWindow() {
     win.loadURL(startUrl);
   }
 
-  // Handle external links
   win.webContents.setWindowOpenHandler(({ url: newUrl }) => {
-    // Check if the URL is external
     if (newUrl.startsWith('http:') || newUrl.startsWith('https:') ) {
-      shell.openExternal(newUrl); // Open in default browser
-      return { action: 'deny' }; // Prevent Electron from opening a new window
+      shell.openExternal(newUrl); 
+      return { action: 'deny' }; 
     }
-    return { action: 'allow' }; // Allow internal navigation
+    return { action: 'allow' }; 
   });
 }
 
@@ -94,24 +96,29 @@ ipcMain.handle('set-pdf-header-config', (event, config) => {
   }
 });
 
-// IPC handler for saving analysis to a case (simulated DB interaction)
+// Case Management IPC
 ipcMain.handle('save-analysis-to-case-electron', (event, caseId, analysisEntry) => {
-  // In a real scenario, this would interact with a local database (e.g., SQLite)
-  // For now, we'll log it and simulate success
   console.log(`Electron: Saving analysis to case ${caseId}:`, analysisEntry);
-  // You would typically find the case, update its relatedAnalyses array, and save it back.
-  return { success: true, data: analysisEntry }; 
+  let cases = store.get('casesDB', []);
+  const caseIndex = cases.findIndex(c => c.id === caseId);
+  if (caseIndex !== -1) {
+    if (!cases[caseIndex].relatedAnalyses) {
+      cases[caseIndex].relatedAnalyses = [];
+    }
+    cases[caseIndex].relatedAnalyses.push(analysisEntry);
+    cases[caseIndex].lastModified = new Date().toISOString();
+    store.set('casesDB', cases);
+    return { success: true, data: analysisEntry };
+  }
+  return { success: false, error: "Caso não encontrado." };
 });
 
-// IPC handler for fetching all cases (simulated DB interaction)
 ipcMain.handle('fetch-cases-electron', () => {
-  // Simulate fetching cases from a local store or DB
-  const cases = store.get('casesDB', []); // Default to empty array if not found
+  const cases = store.get('casesDB', []); 
   console.log('Electron: Fetching cases, count:', cases.length);
   return cases;
 });
 
-// IPC handler for fetching a single case by ID
 ipcMain.handle('fetch-case-details-electron', (event, caseId) => {
   const cases = store.get('casesDB', []);
   const caseDetail = cases.find(c => c.id === caseId);
@@ -119,7 +126,6 @@ ipcMain.handle('fetch-case-details-electron', (event, caseId) => {
   return caseDetail || null;
 });
 
-// IPC handler for creating a new case
 ipcMain.handle('create-case-electron', (event, caseData) => {
   let cases = store.get('casesDB', []);
   const newCase = {
@@ -135,7 +141,6 @@ ipcMain.handle('create-case-electron', (event, caseData) => {
   return newCase;
 });
 
-// IPC handler for updating a case
 ipcMain.handle('update-case-electron', (event, updatedCaseData) => {
   let cases = store.get('casesDB', []);
   const caseIndex = cases.findIndex(c => c.id === updatedCaseData.id);
@@ -148,7 +153,6 @@ ipcMain.handle('update-case-electron', (event, updatedCaseData) => {
   return null;
 });
 
-// IPC handler for deleting a case
 ipcMain.handle('delete-case-electron', (event, caseId) => {
   let cases = store.get('casesDB', []);
   const initialLength = cases.length;
@@ -156,6 +160,52 @@ ipcMain.handle('delete-case-electron', (event, caseId) => {
   store.set('casesDB', cases);
   console.log('Electron: Case deleted:', caseId, cases.length < initialLength);
   return cases.length < initialLength;
+});
+
+// User Management IPC
+ipcMain.handle('register-user-electron', (event, userData) => {
+  let users = store.get('registeredUsersDB', []);
+  const existingUser = users.find(u => u.email === userData.email);
+  if (existingUser) {
+    return { success: false, error: 'Email já cadastrado.' };
+  }
+  const newUser = {
+    id: crypto.randomUUID(),
+    ...userData,
+    dateRegistered: new Date().toISOString(),
+  };
+  users.unshift(newUser);
+  store.set('registeredUsersDB', users);
+  console.log('Electron: User registered (simulated email):', newUser.email, 'Password:', newUser.password);
+  // SIMULATE EMAIL SENDING: Log credentials. In a real app, send an email.
+  // This is highly insecure for production.
+  dialog.showMessageBox({
+    type: 'info',
+    title: 'Usuário Registrado (Simulado)',
+    message: `Usuário ${newUser.email} registrado com senha (temporária): ${newUser.password}\nEm uma aplicação real, esta senha seria enviada por email e deveria ser alterada no primeiro login.`,
+  });
+  return { success: true, data: newUser };
+});
+
+ipcMain.handle('login-user-electron', (event, { email, password }) => {
+  const users = store.get('registeredUsersDB', []);
+  const user = users.find(u => u.email === email && u.password === password); // Insecure: plain text password check
+  if (user) {
+    console.log('Electron: User login successful:', email);
+    const { password, ...userWithoutPassword } = user; // Don't send password to renderer
+    return { success: true, user: userWithoutPassword };
+  }
+  console.log('Electron: User login failed for:', email);
+  return { success: false, error: 'Email ou senha inválidos.' };
+});
+
+ipcMain.handle('fetch-registered-users-electron', () => {
+  const users = store.get('registeredUsersDB', []);
+  // Remove passwords before sending to renderer
+  return users.map(user => {
+    const { password, ...userWithoutPassword } = user;
+    return userWithoutPassword;
+  });
 });
 
 

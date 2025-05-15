@@ -4,11 +4,14 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { BrainCircuit, ShieldCheck, BarChart3, GitFork, Mic, FileSearch, ImageIcon, Landmark } from "lucide-react";
+import { BrainCircuit, ShieldCheck, BarChart3, GitFork, Mic, FileSearch, ImageIcon, Landmark, LogIn } from "lucide-react"; // Added LogIn
 import Image from "next/image";
 import { APP_NAME, SITE_DESCRIPTION } from "@/config/site";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function LandingPage() {
+  const { isAuthenticated } = useAuth();
+
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-secondary/30">
       <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -18,14 +21,22 @@ export default function LandingPage() {
             <span className="text-2xl font-bold text-primary">{APP_NAME}</span>
           </Link>
           <nav className="flex items-center gap-4">
-            <Link href="/request-access">
-              <Button variant="default">Solicitar Acesso</Button>
-            </Link>
-             {/* Placeholder for future login button
-            <Link href="/login">
-              <Button variant="outline">Login</Button>
-            </Link>
-            */}
+            {isAuthenticated ? (
+              <Link href="/dashboard">
+                <Button variant="default">Acessar Painel</Button>
+              </Link>
+            ) : (
+              <>
+                <Link href="/login">
+                  <Button variant="outline">
+                    <LogIn className="mr-2 h-4 w-4" /> Login
+                  </Button>
+                </Link>
+                <Link href="/request-access">
+                  <Button variant="default">Solicitar Acesso</Button>
+                </Link>
+              </>
+            )}
           </nav>
         </div>
       </header>
@@ -40,12 +51,11 @@ export default function LandingPage() {
               {SITE_DESCRIPTION}
             </p>
             <div className="mt-10 flex items-center justify-center gap-x-6">
-              <Link href="/request-access">
+              <Link href={isAuthenticated ? "/dashboard" : "/request-access"}>
                 <Button size="lg" className="text-lg px-8 py-6">
-                  Solicitar Acesso Agora
+                  {isAuthenticated ? "Ir para o Painel" : "Solicitar Acesso Agora"}
                 </Button>
               </Link>
-              {/* <Button variant="link" size="lg" className="text-lg">Saiba Mais &rarr;</Button> */}
             </div>
           </div>
         </section>
@@ -83,15 +93,15 @@ export default function LandingPage() {
 
         <section className="container py-16 md:py-24 text-center">
            <div className="mx-auto max-w-3xl">
-            <Image src="https://picsum.photos/seed/cyberric-dashboard/1200/600" alt="CyberRIC Dashboard Preview" width={1200} height={600} className="rounded-xl shadow-2xl mb-12" data-ai-hint="dashboard interface" />
+            <Image src="https://placehold.co/1200x600.png" alt="CyberRIC Dashboard Preview" width={1200} height={600} className="rounded-xl shadow-2xl mb-12" data-ai-hint="dashboard interface" />
             <h2 className="text-3xl font-bold tracking-tight text-primary sm:text-4xl">Inteligência ao seu Alcance</h2>
             <p className="mt-6 text-lg leading-8 text-muted-foreground">
               O {APP_NAME} foi projetado para ser uma ferramenta intuitiva e poderosa, capacitando agentes e analistas a desvendar informações complexas de forma eficiente e segura.
             </p>
             <div className="mt-10">
-              <Link href="/request-access">
+              <Link href={isAuthenticated ? "/dashboard" : "/request-access"}>
                 <Button size="lg" className="text-lg px-8 py-6 bg-accent hover:bg-accent/90 text-accent-foreground">
-                  Quero Começar
+                  {isAuthenticated ? "Acessar Plataforma" : "Quero Começar"}
                 </Button>
               </Link>
             </div>

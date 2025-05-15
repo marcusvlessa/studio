@@ -1,3 +1,4 @@
+
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -16,4 +17,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   updateCase: (updatedCaseData) => ipcRenderer.invoke('update-case-electron', updatedCaseData),
   deleteCase: (caseId) => ipcRenderer.invoke('delete-case-electron', caseId),
   saveAnalysisToCase: (caseId, analysisEntry) => ipcRenderer.invoke('save-analysis-to-case-electron', caseId, analysisEntry),
+
+  // User Management IPC (New)
+  registerUserElectron: (userData) => ipcRenderer.invoke('register-user-electron', userData),
+  loginUserElectron: (credentials) => ipcRenderer.invoke('login-user-electron', credentials),
+  fetchRegisteredUsersElectron: () => ipcRenderer.invoke('fetch-registered-users-electron'),
 });

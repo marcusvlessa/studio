@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
-import { Send, BrainCircuit, ArrowLeft } from "lucide-react";
+import { Send, BrainCircuit, ArrowLeft, Loader2 } from "lucide-react";
 import { APP_NAME } from "@/config/site";
 
 const requestAccessSchema = z.object({

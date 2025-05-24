@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { BrainCircuit, LogOut, UserCircle } from "lucide-react"; 
+import { BrainCircuit, LogOut, UserCircle, Settings } from "lucide-react"; 
 import { useAuth } from "@/contexts/AuthContext";
 import {
   DropdownMenu,

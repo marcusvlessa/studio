@@ -333,7 +333,7 @@ function DocumentAnalysisContent() {
                                                     {tag.relevantExcerpts && tag.relevantExcerpts.length > 0 && (
                                                         <div><strong>Trechos Relevantes:</strong>
                                                           <ul className="list-disc list-inside pl-4">
-                                                            {tag.relevantExcerpts.map((excerpt, i) => <li key={i} className="italic">"{excerpt}"</li>)}
+                                                            {tag.relevantExcerpts.map((excerpt, i) => <li key={i} className="italic">&quot;{excerpt}&quot;</li>)}
                                                           </ul>
                                                         </div>
                                                     )}

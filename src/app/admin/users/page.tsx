@@ -1,7 +1,7 @@
 // src/app/admin/users/page.tsx
 "use client";
 
-import React, { useState, useEffect, type FormEvent } from "react";
+import React, { useState, useEffect, type FormEvent, useCallback } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,7 +38,7 @@ export default function AdminUsersPage() {
 
   const { toast } = useToast();
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     if (!window.electronAPI?.fetchRegisteredUsersElectron) {
       toast({ variant: "destructive", title: "Erro", description: "API do Electron não disponível." });
       setIsLoading(false);
@@ -53,11 +53,11 @@ export default function AdminUsersPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [toast]); // Include toast as a dependency for fetchUsers
 
   useEffect(() => {
     fetchUsers();
-  }, [toast]);
+  }, [fetchUsers]); // Add fetchUsers to the dependency array
 
   const resetForm = () => {
     setName("");

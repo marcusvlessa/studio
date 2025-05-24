@@ -2,7 +2,7 @@
 // src/app/case-management/page.tsx
 "use client";
 
-import { useState, type FormEvent, useEffect, Suspense } from "react";
+import { useState, type FormEvent, useEffect, Suspense, useCallback } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,7 +32,7 @@ function CaseManagementPageContent() {
   const router = useRouter();
   const newCaseTrigger = searchParams.get('newCase');
 
-  const fetchCases = async () => {
+  const fetchCases = useCallback(async () => {
     setIsLoading(true);
     try {
       const response = await fetch('/api/cases');
@@ -44,11 +44,11 @@ function CaseManagementPageContent() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [toast]); // Include toast as a dependency for fetchCases
 
   useEffect(() => {
     fetchCases();
-  }, []);
+  }, [fetchCases]); // Add fetchCases to the dependency array
 
   useEffect(() => {
     if (newCaseTrigger === 'true') {
@@ -178,7 +178,7 @@ function CaseManagementPageContent() {
           <CardContent className="flex flex-col items-center gap-4">
             <FolderKanban className="h-16 w-16 text-muted-foreground" />
             <p className="text-muted-foreground">Nenhum caso criado ainda.</p>
-            <p className="text-sm text-muted-foreground">Clique em "Novo Caso" para começar.</p>
+            <p className="text-sm text-muted-foreground">Clique em &quot;Novo Caso&quot; para começar.</p>
           </CardContent>
         </Card>
       ) : (
